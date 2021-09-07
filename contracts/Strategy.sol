@@ -34,8 +34,8 @@ contract Strategy is BaseStrategy {
     uint256[] public minAmountsOut;
     bytes32 public balancerPoolId;
     uint8 public numTokens;
-    uint8 public tokenIndex = type(uint8).max;
-    uint256 public max = type(uint256).max;
+    uint8 public tokenIndex;
+    uint256 public constant max = type(uint256).max;
 
     //1	    0.01%
     //5	    0.05%
@@ -59,9 +59,37 @@ contract Strategy is BaseStrategy {
         uint256 _maxSlippageIn,
         uint256 _maxSlippageOut,
         uint256 _maxSingleDeposit,
+        uint256 _minDepositPeriod)
+    public BaseStrategy(_vault){
+        _initializeStrat(_vault, _balancerVault, _balancerPool, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod);
+    }
+
+    function initialize(
+        address _vault,
+        address _strategist,
+        address _rewards,
+        address _keeper,
+        address _balancerVault,
+        address _balancerPool,
+        uint256 _maxSlippageIn,
+        uint256 _maxSlippageOut,
+        uint256 _maxSingleDeposit,
         uint256 _minDepositPeriod
-    )
-    public BaseStrategy(_vault) {
+    ) external {
+        _initialize(_vault, _strategist, _rewards, _keeper);
+        _initializeStrat(_vault, _balancerVault, _balancerPool, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod);
+    }
+
+    function _initializeStrat(
+        address _vault,
+        address _balancerVault,
+        address _balancerPool,
+        uint256 _maxSlippageIn,
+        uint256 _maxSlippageOut,
+        uint256 _maxSingleDeposit,
+        uint256 _minDepositPeriod)
+    internal {
+        require(address(bpt) == address(0x0), "Strategy already initialized!");
         bpt = IBalancerPool(_balancerPool);
         balancerPoolId = bpt.getPoolId();
         balancerVault = IBalancerVault(_balancerVault);
@@ -69,6 +97,7 @@ contract Strategy is BaseStrategy {
         (IERC20[] memory tokens,,) = balancerVault.getPoolTokens(balancerPoolId);
         numTokens = uint8(tokens.length);
         assets = new IAsset[](numTokens);
+        tokenIndex = type(uint8).max;
         for (uint8 i = 0; i < numTokens; i++) {
             if (tokens[i] == want) {
                 tokenIndex = i;
@@ -86,6 +115,39 @@ contract Strategy is BaseStrategy {
         router = IUniswapV2Router02(uniswapRouter);
         want.safeApprove(address(balancerVault), max);
     }
+
+    event Cloned(address indexed clone);
+
+    function clone(
+        address _vault,
+        address _strategist,
+        address _rewards,
+        address _keeper,
+        address _balancerVault,
+        address _balancerPool,
+        uint256 _maxSlippageIn,
+        uint256 _maxSlippageOut,
+        uint256 _maxSingleDeposit,
+        uint256 _minDepositPeriod
+    ) external returns (address payable newStrategy) {
+        bytes20 addressBytes = bytes20(address(this));
+
+        assembly {
+        // EIP-1167 bytecode
+            let clone_code := mload(0x40)
+            mstore(clone_code, 0x3d602d80600a3d3981f3363d3d373d3d3d363d73000000000000000000000000)
+            mstore(add(clone_code, 0x14), addressBytes)
+            mstore(add(clone_code, 0x28), 0x5af43d82803e903d91602b57fd5bf30000000000000000000000000000000000)
+            newStrategy := create(0, clone_code, 0x37)
+        }
+
+        Strategy(newStrategy).initialize(
+            _vault, _strategist, _rewards, _keeper, _balancerVault, _balancerPool, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod
+        );
+
+        emit Cloned(newStrategy);
+    }
+
 
     // ******** OVERRIDE THESE METHODS FROM BASE CONTRACT ************
 
@@ -119,10 +181,6 @@ contract Strategy is BaseStrategy {
             _loss = _loss.sub(_profit);
             _profit = 0;
         }
-        emit Debug("prepareReturn _debtPayment", _debtPayment);
-        emit Debug("prepareReturn _profit", _profit);
-        emit Debug("prepareReturn _loss", _loss);
-
     }
 
     event Debug(string name, uint256 value);
@@ -142,15 +200,12 @@ contract Strategy is BaseStrategy {
             uint256[] memory amountsIn = new uint256[](numTokens);
             amountsIn[tokenIndex] = amountIn;
             bytes memory userData = abi.encode(IBalancerVault.JoinKind.EXACT_TOKENS_IN_FOR_BPT_OUT, amountsIn, 0);
-            emit Debug("adjustPosition userData", userData);
             IBalancerVault.JoinPoolRequest memory request = IBalancerVault.JoinPoolRequest(assets, maxAmountsIn, userData, false);
             balancerVault.joinPool(balancerPoolId, address(this), address(this), request);
 
             uint256 pooledDelta = balanceOfPooled().sub(pooledBefore);
             uint256 joinSlipped = amountIn > pooledDelta ? amountIn.sub(pooledDelta) : 0;
-            emit Debug("adjustPosition wantSlipped", joinSlipped);
             uint256 maxLoss = amountIn.mul(maxSlippageIn).div(basisOne);
-            emit Debug("adjustPosition maxLoss", maxLoss);
 
             require(joinSlipped <= maxLoss, "Exceeded maxSlippageIn!");
             lastDepositTime = now;
@@ -158,7 +213,6 @@ contract Strategy is BaseStrategy {
     }
 
     function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _liquidatedAmount, uint256 _loss){
-        emit Debug("liquidatePosition", 0);
         if (estimatedTotalAssets() < _amountNeeded) {
             _liquidatedAmount = liquidateAllPositions();
             return (_liquidatedAmount, _amountNeeded.sub(_liquidatedAmount));
@@ -182,8 +236,6 @@ contract Strategy is BaseStrategy {
         } else {
             _liquidatedAmount = _amountNeeded;
         }
-        emit Debug("liquidatePosition _liquidatedAmount", _liquidatedAmount);
-        emit Debug("liquidatePosition _loss", _loss);
     }
 
     function liquidateAllPositions() internal override returns (uint256 liquidated) {
@@ -199,17 +251,16 @@ contract Strategy is BaseStrategy {
 
     function prepareMigration(address _newStrategy) internal override {
         bpt.transfer(_newStrategy, balanceOfBpt());
-    }
-
-    function protectedTokens() internal view override returns (address[] memory){
-        address[] memory protected = new address[](1 + rewardTokens.length);
-        protected[0] = address(bpt);
         for (uint i = 0; i < rewardTokens.length; i++) {
-            protected[i + 1] = address(rewardTokens[i]);
+            IERC20 token = rewardTokens[i];
+            uint256 balance = token.balanceOf(address(this));
+            if (balance > 0) {
+                token.transfer(_newStrategy, balance);
+            }
         }
-        return protected;
     }
 
+    function protectedTokens() internal view override returns (address[] memory){}
 
     function ethToWant(uint256 _amtInWei) public view override returns (uint256){
         if (_amtInWei == 0) {

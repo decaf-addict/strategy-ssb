@@ -51,6 +51,13 @@ def token():
     token_address = "0x6B175474E89094C44Da98b954EedeAC495271d0F"
     yield Contract(token_address)
 
+@pytest.fixture
+def token2():
+    # 0x6B175474E89094C44Da98b954EedeAC495271d0F DAI
+    # 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 USDC
+    # 0xdAC17F958D2ee523a2206206994597C13D831ec7 USDT
+    token_address = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+    yield Contract(token_address)
 
 @pytest.fixture
 def amount(accounts, token, user):
@@ -61,6 +68,17 @@ def amount(accounts, token, user):
     # 0xA929022c9107643515F5c777cE9a910F0D1e490C USDT
     reserve = accounts.at("0x5d3a536E4D6DbD6114cc1Ead35777bAB948E3643", force=True)
     token.transfer(user, amount, {"from": reserve})
+    yield amount
+
+@pytest.fixture
+def amount2(accounts, token2, user):
+    amount = 1_000_000 * 10 ** token2.decimals()
+    # In order to get some funds for the token you are about to use,
+    # 0x5d3a536E4D6DbD6114cc1Ead35777bAB948E3643 DAI
+    # 0x0A59649758aa4d66E25f08Dd01271e891fe52199 USDC
+    # 0xA929022c9107643515F5c777cE9a910F0D1e490C USDT
+    reserve = accounts.at("0x0A59649758aa4d66E25f08Dd01271e891fe52199", force=True)
+    token2.transfer(user, amount, {"from": reserve})
     yield amount
 
 
@@ -108,6 +126,14 @@ def vault(pm, gov, rewards, guardian, management, token):
     vault.setManagement(management, {"from": gov})
     yield vault
 
+@pytest.fixture
+def vault2(pm, gov, rewards, guardian, management, token2):
+    Vault = pm(config["dependencies"][0]).Vault
+    vault = guardian.deploy(Vault)
+    vault.initialize(token2, gov, rewards, "", "", guardian, management, {"from": gov})
+    vault.setDepositLimit(2 ** 256 - 1, {"from": gov})
+    vault.setManagement(management, {"from": gov})
+    yield vault
 
 @pytest.fixture
 def balancer_vault():
