@@ -106,6 +106,15 @@ def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RE
     assert strategy.estimatedTotalAssets() + profit > amount
     assert vault.pricePerShare() > before_pps
 
+    vault.updateStrategyDebtRatio(strategy.address, 5_000, {"from": gov})
+    chain.sleep(1)
+    strategy.harvest({"from": strategist})
+    util.stateOfStrat("after harvest 5000", strategy, token)
+
+    half = int(amount / 2)
+    # profits
+    assert strategy.estimatedTotalAssets() >= half
+
 
 def test_change_debt(
         chain, gov, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, bal, bal_whale, ldo, ldo_whale
@@ -172,7 +181,8 @@ def test_sweep(gov, vault, strategy, token, user, amount, weth, weth_amout):
 
 
 def test_triggers(
-        chain, gov, vault, strategy, token, amount, user, weth, weth_amout, strategist, bal, bal_whale, ldo, ldo_whale
+        chain, gov, vault, strategy, token, amount, user, weth, weth_amout, strategist, bal, bal_whale, ldo, ldo_whale,
+        token_whale
 ):
     # Deposit to the vault and harvest
     token.approve(vault.address, amount, {"from": user})
@@ -188,6 +198,10 @@ def test_triggers(
     assert strategy.tendTrigger(0) == False
     chain.sleep(strategy.minDepositPeriod() + 1)
     chain.mine(1)
+    assert strategy.tendTrigger(0) == False
+
+    # simulate some loose balance
+    token.transfer(strategy, 1e18, {"from": token_whale})
     assert strategy.tendTrigger(0) == True
 
 
