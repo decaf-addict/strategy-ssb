@@ -224,7 +224,7 @@ contract Strategy is BaseStrategy {
 
             _sellBptForExactToken(toExitAmount);
 
-            _liquidatedAmount = balanceOfWant();
+            _liquidatedAmount = Math.min(balanceOfWant(), _amountNeeded);
             _loss = _amountNeeded.sub(_liquidatedAmount);
 
             // enforce that amount exited didn't slip beyond our tolerance
