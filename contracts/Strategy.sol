@@ -363,7 +363,7 @@ contract Strategy is BaseStrategy {
         return totalWantPooled;
     }
 
-    function _getSwapRequest(IERC20 token, uint256 amount, uint256 lastChangeBlock) public view returns (IBalancerPool.SwapRequest memory request){
+    function _getSwapRequest(IERC20 token, uint256 amount, uint256 lastChangeBlock) internal view returns (IBalancerPool.SwapRequest memory request){
         return IBalancerPool.SwapRequest(IBalancerPool.SwapKind.GIVEN_IN,
             token,
             want,

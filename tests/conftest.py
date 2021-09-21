@@ -129,6 +129,15 @@ def weth_amout(user, weth):
     user.transfer(weth, weth_amout)
     yield weth_amout
 
+@pytest.fixture
+def live_ssb_weth(Strategy):
+    strat = "0xb8A245f9a066AD49fEAF15443E7704b83e2A9bF0"
+    yield Strategy.at(strat)
+
+@pytest.fixture
+def live_dai_vault():
+    vault = "0x1F8ad2cec4a2595Ff3cdA9e8a39C0b1BE1A02014"
+    yield Contract(vault)
 
 @pytest.fixture
 def vault(pm, gov, rewards, guardian, management, token):
