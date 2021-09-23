@@ -185,9 +185,6 @@ contract Strategy is BaseStrategy {
         }
     }
 
-    event Debug(string name, uint256 value);
-    event Debug(string name, bytes value);
-
     function adjustPosition(uint256 _debtOutstanding) internal override {
         if (now - lastDepositTime < minDepositPeriod) {
             return;
