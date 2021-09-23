@@ -50,7 +50,7 @@ contract Strategy is BaseStrategy {
     uint256 public minDepositPeriod; // seconds
     uint256 public lastDepositTime;
     uint256 public constant basisOne = 10000;
-
+    bool internal isOriginal = true;
 
     constructor(
         address _vault,
@@ -130,6 +130,8 @@ contract Strategy is BaseStrategy {
         uint256 _maxSingleDeposit,
         uint256 _minDepositPeriod
     ) external returns (address payable newStrategy) {
+        require(isOriginal);
+
         bytes20 addressBytes = bytes20(address(this));
 
         assembly {
