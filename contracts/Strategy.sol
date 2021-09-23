@@ -24,18 +24,18 @@ contract Strategy is BaseStrategy {
 
     IUniswapV2Router02 constant public uniswapRouter = IUniswapV2Router02(address(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D));
     IUniswapV2Router02 constant public sushiswapRouter = IUniswapV2Router02(address(0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F));
-    IERC20 public constant weth = IERC20(address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2));
+    IERC20 internal constant weth = IERC20(address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2));
     IUniswapV2Router02 public router;
 
     IBalancerVault public balancerVault;
     IBalancerPool public bpt;
     IERC20[] public rewardTokens;
-    IAsset[] public assets;
-    uint256[] public minAmountsOut;
+    IAsset[] internal assets;
+    uint256[] internal minAmountsOut;
     bytes32 public balancerPoolId;
     uint8 public numTokens;
     uint8 public tokenIndex;
-    uint256 public constant max = type(uint256).max;
+    uint256 internal constant max = type(uint256).max;
 
     //1	    0.01%
     //5	    0.05%
@@ -49,7 +49,7 @@ contract Strategy is BaseStrategy {
     uint256 public maxSingleDeposit;
     uint256 public minDepositPeriod; // seconds
     uint256 public lastDepositTime;
-    uint256 public constant basisOne = 10000;
+    uint256 internal constant basisOne = 10000;
     bool internal isOriginal = true;
 
     constructor(
@@ -90,7 +90,7 @@ contract Strategy is BaseStrategy {
         uint256 _minDepositPeriod)
     internal {
         require(address(bpt) == address(0x0), "Strategy already initialized!");
-        healthCheck = address(0xDDCea799fF1699e98EDF118e0629A974Df7DF012); // health.ychad.eth
+        //        healthCheck = address(0xDDCea799fF1699e98EDF118e0629A974Df7DF012); // health.ychad.eth
         bpt = IBalancerPool(_balancerPool);
         balancerPoolId = bpt.getPoolId();
         balancerVault = IBalancerVault(_balancerVault);
@@ -227,18 +227,14 @@ contract Strategy is BaseStrategy {
             _liquidatedAmount = Math.min(balanceOfWant(), _amountNeeded);
             _loss = _amountNeeded.sub(_liquidatedAmount);
 
-            // enforce that amount exited didn't slip beyond our tolerance
-            uint256 exitedAmount = _liquidatedAmount.sub(looseAmount);
-            // just in case there's positive slippage
-            uint256 exitSlipped = toExitAmount > exitedAmount ? toExitAmount.sub(exitedAmount) : 0;
-            uint256 maxLoss = toExitAmount.mul(maxSlippageIn).div(basisOne);
-            require(exitSlipped <= maxLoss, "Exceeded maxSlippageOut!");
+            _enforceSlippageOut(toExitAmount, _liquidatedAmount.sub(looseAmount));
         } else {
             _liquidatedAmount = _amountNeeded;
         }
     }
 
     function liquidateAllPositions() internal override returns (uint256 liquidated) {
+        uint eta = estimatedTotalAssets();
         uint256 bpts = balanceOfBpt();
         if (bpts > 0) {
             // exit entire position for single token. Could revert due to single exit limit enforced by balancer
@@ -246,7 +242,10 @@ contract Strategy is BaseStrategy {
             IBalancerVault.ExitPoolRequest memory request = IBalancerVault.ExitPoolRequest(assets, minAmountsOut, userData, false);
             balancerVault.exitPool(balancerPoolId, address(this), address(this), request);
         }
-        return balanceOfWant();
+
+        liquidated = balanceOfWant();
+        _enforceSlippageOut(eta, liquidated);
+        return liquidated;
     }
 
     function prepareMigration(address _newStrategy) internal override {
@@ -419,6 +418,14 @@ contract Strategy is BaseStrategy {
     function switchDex(bool isUniswap) external onlyAuthorized {
         if (isUniswap) router = uniswapRouter;
         else router = sushiswapRouter;
+    }
+
+    function _enforceSlippageOut(uint _intended, uint _actual) internal {
+        // enforce that amount exited didn't slip beyond our tolerance
+        // just in case there's positive slippage
+        uint256 exitSlipped = _intended > _actual ? _intended.sub(_actual) : 0;
+        uint256 maxLoss = _intended.mul(maxSlippageOut).div(basisOne);
+        require(exitSlipped <= maxLoss, "Exceeded maxSlippageOut!");
     }
 
     receive() external payable {}
