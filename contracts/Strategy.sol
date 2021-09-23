@@ -387,14 +387,14 @@ contract Strategy is BaseStrategy {
     }
 
     // for partnership rewards like Lido or airdrops
-    function whitelistRewards(address _rewardToken) public onlyAuthorized {
+    function whitelistRewards(address _rewardToken) public onlyVaultManagers {
         IERC20 token = IERC20(_rewardToken);
         token.approve(address(uniswapRouter), max);
         token.approve(address(sushiswapRouter), max);
         rewardTokens.push(token);
     }
 
-    function delistAllRewards() public onlyAuthorized {
+    function delistAllRewards() public onlyVaultManagers {
         for (uint i = 0; i < rewardTokens.length; i++) {
             rewardTokens[i].approve(address(uniswapRouter), 0);
             rewardTokens[i].approve(address(sushiswapRouter), 0);
@@ -407,7 +407,7 @@ contract Strategy is BaseStrategy {
         return rewardTokens.length;
     }
 
-    function setParams(uint256 _maxSlippageIn, uint256 _maxSlippageOut, uint256 _maxSingleDeposit, uint256 _minDepositPeriod) public onlyAuthorized {
+    function setParams(uint256 _maxSlippageIn, uint256 _maxSlippageOut, uint256 _maxSingleDeposit, uint256 _minDepositPeriod) public onlyVaultManagers {
         require(_maxSlippageIn <= basisOne, "maxSlippageIn too high");
         maxSlippageIn = _maxSlippageIn;
 
