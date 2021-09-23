@@ -103,7 +103,8 @@ def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RE
     chain.mine(1)
     profit = token.balanceOf(vault.address)  # Profits go to vault
 
-    assert strategy.estimatedTotalAssets() + profit > amount
+    slippageIn = amount * strategy.maxSlippageIn() / 10000
+    assert strategy.estimatedTotalAssets() + profit > (amount - slippageIn)
     assert vault.pricePerShare() > before_pps
 
     vault.updateStrategyDebtRatio(strategy.address, 5_000, {"from": gov})
@@ -113,7 +114,7 @@ def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RE
 
     half = int(amount / 2)
     # profits
-    assert strategy.estimatedTotalAssets() >= half
+    assert strategy.estimatedTotalAssets() >= half - slippageIn/2
 
 
 def test_change_debt(
@@ -198,17 +199,13 @@ def test_triggers(
     assert strategy.tendTrigger(0) == False
     chain.sleep(strategy.minDepositPeriod() + 1)
     chain.mine(1)
-    assert strategy.tendTrigger(0) == False
-
-    # simulate some loose balance
-    token.transfer(strategy, 1e18, {"from": token_whale})
     assert strategy.tendTrigger(0) == True
 
 
 def test_rewards(
-        strategy, strategist
+        strategy, strategist, gov
 ):
     # added in setup
     assert strategy.numRewards() == 2
-    strategy.delistAllRewards({'from': strategist})
+    strategy.delistAllRewards({'from': gov})
     assert strategy.numRewards() == 0

@@ -90,7 +90,7 @@ contract Strategy is BaseStrategy {
         uint256 _minDepositPeriod)
     internal {
         require(address(bpt) == address(0x0), "Strategy already initialized!");
-        //        healthCheck = address(0xDDCea799fF1699e98EDF118e0629A974Df7DF012); // health.ychad.eth
+        healthCheck = address(0xDDCea799fF1699e98EDF118e0629A974Df7DF012); // health.ychad.eth
         bpt = IBalancerPool(_balancerPool);
         balancerPoolId = bpt.getPoolId();
         balancerVault = IBalancerVault(_balancerVault);

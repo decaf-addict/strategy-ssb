@@ -77,7 +77,7 @@ def token_whale(accounts):
 
 @pytest.fixture
 def amount(accounts, token, user, token_whale):
-    amount = 1_000_000 * 10 ** token.decimals()
+    amount = 10_000_000 * 10 ** token.decimals()
     # In order to get some funds for the token you are about to use,
     token.transfer(user, amount, {"from": token_whale})
     yield amount
@@ -129,15 +129,18 @@ def weth_amout(user, weth):
     user.transfer(weth, weth_amout)
     yield weth_amout
 
+
 @pytest.fixture
 def live_ssb_weth(Strategy):
     strat = "0xb8A245f9a066AD49fEAF15443E7704b83e2A9bF0"
     yield Strategy.at(strat)
 
+
 @pytest.fixture
 def live_dai_vault():
     vault = "0x1F8ad2cec4a2595Ff3cdA9e8a39C0b1BE1A02014"
     yield Contract(vault)
+
 
 @pytest.fixture
 def vault(pm, gov, rewards, guardian, management, token):
@@ -174,7 +177,7 @@ def pool():
 
 @pytest.fixture
 def strategy(strategist, keeper, vault, Strategy, gov, balancer_vault, pool, bal, ldo):
-    strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, 10, 10, 1_000_000, 2 * 60 * 60)
+    strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, 5, 5, 1_000_000, 2 * 60 * 60)
     strategy.setKeeper(keeper)
     strategy.whitelistRewards(bal, {'from': gov})
     strategy.whitelistRewards(ldo, {'from': gov})
