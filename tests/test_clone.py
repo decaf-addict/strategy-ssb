@@ -9,7 +9,7 @@ def test_clone(accounts, Strategy, strategy, strategist, rewards, keeper, token2
                pool, chain, gov,
                RELATIVE_APPROX,
                bal, bal_whale, ldo, weth, weth_amout,
-               ldo_whale, swapStepsBal, swapStepsLdo, management):
+               ldo_whale, swapStepsBal2, swapStepsLdo2, management):
     with brownie.reverts("Strategy already initialized"):
         strategy.initialize(vault, strategist, rewards, keeper, balancer_vault, pool, 10, 10, 100_000, 2 * 60 * 60)
 
@@ -21,8 +21,8 @@ def test_clone(accounts, Strategy, strategy, strategist, rewards, keeper, token2
         cloned_strategy.initialize(vault, strategist, rewards, keeper, balancer_vault, pool, 10, 10, 100_000,
                                    2 * 60 * 60, {'from': gov})
     cloned_strategy.setKeeper(keeper, {'from': gov})
-    cloned_strategy.whitelistRewards(bal, swapStepsBal, {'from': management})
-    cloned_strategy.whitelistRewards(ldo, swapStepsLdo, {'from': management})
+    cloned_strategy.whitelistRewards(bal, swapStepsBal2, {'from': management})
+    cloned_strategy.whitelistRewards(ldo, swapStepsLdo2, {'from': management})
     vault2.addStrategy(cloned_strategy, 10_000, 0, 2 ** 256 - 1, 1_000, {"from": gov})
 
     # test operations with clone strategy

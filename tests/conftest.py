@@ -185,6 +185,10 @@ def wethTokenPoolId():
     id = 0x0b09dea16768f0799065c475be02919503cb2a3500020000000000000000001a  # weth-dai
     yield id
 
+@pytest.fixture
+def wethToken2PoolId():
+    id = 0x96646936b91d6b9d7d0c47c496afbf3d6ec7b6f8000200000000000000000019  # weth-usdc
+    yield id
 
 @pytest.fixture
 def ldoWethPoolId():
@@ -196,10 +200,17 @@ def ldoWethPoolId():
 def swapStepsBal(balWethPoolId, wethTokenPoolId, bal, weth, token):
     yield ([balWethPoolId, wethTokenPoolId], [bal, weth, token])
 
-
 @pytest.fixture
 def swapStepsLdo(ldoWethPoolId, wethTokenPoolId, ldo, weth, token):
     yield ([ldoWethPoolId, wethTokenPoolId], [ldo, weth, token])
+
+@pytest.fixture
+def swapStepsBal2(balWethPoolId, wethToken2PoolId, bal, weth, token2):
+    yield ([balWethPoolId, wethToken2PoolId], [bal, weth, token2])
+
+@pytest.fixture
+def swapStepsLdo2(ldoWethPoolId, wethToken2PoolId, ldo, weth, token2):
+    yield ([ldoWethPoolId, wethToken2PoolId], [ldo, weth, token2])
 
 
 @pytest.fixture
