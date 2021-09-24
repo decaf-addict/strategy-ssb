@@ -45,7 +45,7 @@ def test_emergency_exit(
 
 def test_profitable_harvest(
         chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, bal, bal_whale, ldo,
-        ldo_whale
+        ldo_whale, management
 ):
     # Deposit to the vault
     token.approve(vault.address, amount, {"from": user})

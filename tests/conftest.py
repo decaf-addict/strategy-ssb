@@ -176,11 +176,39 @@ def pool():
 
 
 @pytest.fixture
-def strategy(strategist, keeper, vault, Strategy, gov, balancer_vault, pool, bal, ldo):
+def balWethPoolId():
+    yield 0x5c6ee304399dbdb9c8ef030ab642b10820db8f56000200000000000000000014
+
+
+@pytest.fixture
+def wethTokenPoolId():
+    id = 0x0b09dea16768f0799065c475be02919503cb2a3500020000000000000000001a  # weth-dai
+    yield id
+
+
+@pytest.fixture
+def ldoWethPoolId():
+    id = 0xbf96189eee9357a95c7719f4f5047f76bde804e5000200000000000000000087  # weth-dai
+    yield id
+
+
+@pytest.fixture
+def swapStepsBal(balWethPoolId, wethTokenPoolId, bal, weth, token):
+    yield ([balWethPoolId, wethTokenPoolId], [bal, weth, token])
+
+
+@pytest.fixture
+def swapStepsLdo(ldoWethPoolId, wethTokenPoolId, ldo, weth, token):
+    yield ([ldoWethPoolId, wethTokenPoolId], [ldo, weth, token])
+
+
+@pytest.fixture
+def strategy(strategist, keeper, vault, Strategy, gov, balancer_vault, pool, bal, ldo, management, swapStepsBal,
+             swapStepsLdo):
     strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, 5, 5, 1_000_000, 2 * 60 * 60)
     strategy.setKeeper(keeper)
-    strategy.whitelistRewards(bal, {'from': gov})
-    strategy.whitelistRewards(ldo, {'from': gov})
+    strategy.whitelistRewards(bal, swapStepsBal, {'from': gov})
+    strategy.whitelistRewards(ldo, swapStepsLdo, {'from': gov})
     vault.addStrategy(strategy, 10_000, 0, 2 ** 256 - 1, 1_000, {"from": gov})
     yield strategy
 

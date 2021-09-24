@@ -11,7 +11,6 @@ import {SafeERC20, SafeMath, IERC20, Address} from "@openzeppelin/contracts/toke
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Math} from "@openzeppelin/contracts/math/Math.sol";
 import "../interfaces/BalancerV2.sol";
-import "../interfaces/Uniswap.sol";
 
 interface IName {
     function name() external view returns (string memory);
@@ -22,19 +21,22 @@ contract Strategy is BaseStrategy {
     using Address for address;
     using SafeMath for uint256;
 
-    IUniswapV2Router02 constant public uniswapRouter = IUniswapV2Router02(address(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D));
-    IUniswapV2Router02 constant public sushiswapRouter = IUniswapV2Router02(address(0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F));
     IERC20 internal constant weth = IERC20(address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2));
-    IUniswapV2Router02 public router;
-
     IBalancerVault public balancerVault;
     IBalancerPool public bpt;
     IERC20[] public rewardTokens;
     IAsset[] internal assets;
+    SwapSteps[] internal swapSteps;
     uint256[] internal minAmountsOut;
     bytes32 public balancerPoolId;
     uint8 public numTokens;
     uint8 public tokenIndex;
+
+    struct SwapSteps {
+        bytes32[] poolIds;
+        IAsset[] assets;
+    }
+
     uint256 internal constant max = type(uint256).max;
 
     //1	    0.01%
@@ -94,7 +96,6 @@ contract Strategy is BaseStrategy {
         bpt = IBalancerPool(_balancerPool);
         balancerPoolId = bpt.getPoolId();
         balancerVault = IBalancerVault(_balancerVault);
-        (address tokenAddress,) = balancerVault.getPool(balancerPoolId);
         (IERC20[] memory tokens,,) = balancerVault.getPoolTokens(balancerPoolId);
         numTokens = uint8(tokens.length);
         assets = new IAsset[](numTokens);
@@ -113,7 +114,6 @@ contract Strategy is BaseStrategy {
         minAmountsOut = new uint256[](numTokens);
         minDepositPeriod = _minDepositPeriod;
 
-        router = IUniswapV2Router02(uniswapRouter);
         want.safeApprove(address(balancerVault), max);
     }
 
@@ -261,18 +261,7 @@ contract Strategy is BaseStrategy {
 
     function protectedTokens() internal view override returns (address[] memory){}
 
-    function ethToWant(uint256 _amtInWei) public view override returns (uint256){
-        if (_amtInWei == 0) {
-            return 0;
-        }
-
-        address[] memory path = new address[](2);
-        path[0] = address(weth);
-        path[1] = address(want);
-
-        uint256[] memory amounts = router.getAmountsOut(_amtInWei, path);
-        return amounts[amounts.length - 1];
-    }
+    function ethToWant(uint256 _amtInWei) public view override returns (uint256){}
 
     function tendTrigger(uint256 callCostInWei) public view override returns (bool) {
         return now.sub(lastDepositTime) > minDepositPeriod && balanceOfWant() > 0;
@@ -282,13 +271,10 @@ contract Strategy is BaseStrategy {
         bool hasRewards;
         for (uint8 i = 0; i < rewardTokens.length; i++) {
             ERC20 rewardToken = ERC20(address(rewardTokens[i]));
-            uint256 amount = rewardToken.balanceOf(address(this));
 
             uint decReward = rewardToken.decimals();
             uint decWant = ERC20(address(want)).decimals();
-            uint decDiff = decReward > decWant ? decReward.sub(decWant) : 0;
-
-            if (amount > 10 ** decDiff) {
+            if (rewardToken.balanceOf(address(this)) > 10 ** (decReward > decWant ? decReward.sub(decWant) : 0)) {
                 hasRewards = true;
                 break;
             }
@@ -305,20 +291,26 @@ contract Strategy is BaseStrategy {
 
             uint decReward = rewardToken.decimals();
             uint decWant = ERC20(address(want)).decimals();
-            uint decDiff = decReward > decWant ? decReward.sub(decWant) : 0;
 
-            if (amount > 10 ** decDiff) {
-                bool isWeth = want == weth || address(rewardToken) == address(weth);
-                address[] memory path = new address[](isWeth ? 2 : 3);
-                path[0] = address(rewardToken);
-                if (isWeth) {
-                    path[1] = address(want);
-                } else {
-                    path[1] = address(weth);
-                    path[2] = address(want);
+            if (amount > 10 ** (decReward > decWant ? decReward.sub(decWant) : 0)) {
+                uint length = swapSteps[i].poolIds.length;
+                IBalancerVault.BatchSwapStep[] memory steps = new IBalancerVault.BatchSwapStep[](length);
+                int[] memory limits = new int[](length + 1);
+                limits[0] = int(amount);
+                for (uint j = 0; j < length; j++) {
+                    steps[j] = IBalancerVault.BatchSwapStep(swapSteps[i].poolIds[j],
+                        j,
+                        j + 1,
+                        j == 0 ? amount : 0,
+                        abi.encode(0)
+                    );
                 }
-
-                router.swapExactTokensForTokens(amount, 0, path, address(this), now);
+                balancerVault.batchSwap(IBalancerVault.SwapKind.GIVEN_IN,
+                    steps,
+                    swapSteps[i].assets,
+                    IBalancerVault.FundManagement(address(this), false, address(this), false),
+                    limits,
+                    now + 10);
             }
         }
     }
@@ -384,20 +376,20 @@ contract Strategy is BaseStrategy {
     }
 
     // for partnership rewards like Lido or airdrops
-    function whitelistRewards(address _rewardToken) public onlyVaultManagers {
+    function whitelistRewards(address _rewardToken, SwapSteps memory _steps) public onlyVaultManagers {
         IERC20 token = IERC20(_rewardToken);
-        token.approve(address(uniswapRouter), max);
-        token.approve(address(sushiswapRouter), max);
+        token.approve(address(balancerVault), max);
         rewardTokens.push(token);
+        swapSteps.push(_steps);
     }
 
     function delistAllRewards() public onlyVaultManagers {
         for (uint i = 0; i < rewardTokens.length; i++) {
-            rewardTokens[i].approve(address(uniswapRouter), 0);
-            rewardTokens[i].approve(address(sushiswapRouter), 0);
+            rewardTokens[i].approve(address(balancerVault), 0);
         }
         IERC20[] memory noRewardTokens;
         rewardTokens = noRewardTokens;
+        delete swapSteps;
     }
 
     function numRewards() public view returns (uint256 _num){
@@ -415,17 +407,16 @@ contract Strategy is BaseStrategy {
         minDepositPeriod = _minDepositPeriod;
     }
 
-    function switchDex(bool isUniswap) external onlyAuthorized {
-        if (isUniswap) router = uniswapRouter;
-        else router = sushiswapRouter;
-    }
-
     function _enforceSlippageOut(uint _intended, uint _actual) internal {
         // enforce that amount exited didn't slip beyond our tolerance
         // just in case there's positive slippage
         uint256 exitSlipped = _intended > _actual ? _intended.sub(_actual) : 0;
         uint256 maxLoss = _intended.mul(maxSlippageOut).div(basisOne);
         require(exitSlipped <= maxLoss, "Exceeded maxSlippageOut!");
+    }
+
+    function getSwapSteps() public view returns (SwapSteps[] memory){
+        return swapSteps;
     }
 
     receive() external payable {}
