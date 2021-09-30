@@ -29,7 +29,7 @@ interface IBalancerPool is IERC20 {
         uint256[] memory balances,
         uint256 indexIn,
         uint256 indexOut
-    ) external view returns (uint256 amount);
+    ) external returns (uint256 amount);
 }
 
 interface IBalancerVault {
@@ -198,6 +198,14 @@ interface IBalancerVault {
         int256[] memory limits,
         uint256 deadline
     ) external payable returns (int256[] memory);
+
+    // CAVEAT!! Do not call this after a batchSwap in the same txn
+    function queryBatchSwap(
+        SwapKind kind,
+        BatchSwapStep[] memory swaps,
+        IAsset[] memory assets,
+        FundManagement memory funds
+    ) external returns (int256[] memory);
 }
 
 interface IAsset {

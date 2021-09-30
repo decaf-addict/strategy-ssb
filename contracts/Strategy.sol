@@ -53,6 +53,7 @@ contract Strategy is BaseStrategy {
     uint256 public lastDepositTime;
     uint256 internal constant basisOne = 10000;
     bool internal isOriginal = true;
+    uint internal etaCached;
 
     constructor(
         address _vault,
@@ -160,10 +161,20 @@ contract Strategy is BaseStrategy {
     }
 
     function estimatedTotalAssets() public view override returns (uint256) {
-        return balanceOfWant().add(balanceOfPooled());
+        return etaCached;
+    }
+
+    // There is no way to calculate the total asset without doing a tx call.
+    function estimateTotalAssets() public returns (uint256 _wants) {
+        etaCached = balanceOfWant().add(balanceOfPooled());
+        return etaCached;
     }
 
     function prepareReturn(uint256 _debtOutstanding) internal override returns (uint256 _profit, uint256 _loss, uint256 _debtPayment){
+        uint256 total = estimateTotalAssets();
+        uint256 debt = vault.strategies(address(this)).totalDebt;
+        uint toCollect = total > debt ? total.sub(debt) : 0;
+
         if (_debtOutstanding > 0) {
             (_debtPayment, _loss) = liquidatePosition(_debtOutstanding);
         }
@@ -171,7 +182,7 @@ contract Strategy is BaseStrategy {
         uint256 beforeWant = balanceOfWant();
 
         // 2 forms of profit. Incentivized rewards (BAL+other) and pool fees (want)
-        collectTradingFees();
+        collectTradingFees(toCollect);
         sellRewards();
 
         uint256 afterWant = balanceOfWant();
@@ -213,7 +224,7 @@ contract Strategy is BaseStrategy {
     }
 
     function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _liquidatedAmount, uint256 _loss){
-        if (estimatedTotalAssets() < _amountNeeded) {
+        if (estimateTotalAssets() < _amountNeeded) {
             _liquidatedAmount = liquidateAllPositions();
             return (_liquidatedAmount, _amountNeeded.sub(_liquidatedAmount));
         }
@@ -234,7 +245,7 @@ contract Strategy is BaseStrategy {
     }
 
     function liquidateAllPositions() internal override returns (uint256 liquidated) {
-        uint eta = estimatedTotalAssets();
+        uint eta = estimateTotalAssets();
         uint256 bpts = balanceOfBpt();
         if (bpts > 0) {
             // exit entire position for single token. Could revert due to single exit limit enforced by balancer
@@ -315,12 +326,9 @@ contract Strategy is BaseStrategy {
         }
     }
 
-    function collectTradingFees() internal {
-        uint256 total = estimatedTotalAssets();
-        uint256 debt = vault.strategies(address(this)).totalDebt;
-        if (total > debt) {
-            uint256 profit = total.sub(debt);
-            _sellBptForExactToken(profit);
+    function collectTradingFees(uint _profit) internal {
+        if (_profit > 0) {
+            _sellBptForExactToken(_profit);
         }
     }
 
@@ -336,19 +344,37 @@ contract Strategy is BaseStrategy {
         return rewardTokens[index].balanceOf(address(this));
     }
 
-    function balanceOfPooled() public view returns (uint256 _amount){
+    function balanceOfPooled() public returns (uint256 _amount){
         uint256 totalWantPooled;
-        (IERC20[] memory tokens,uint256[] memory totalBalances,uint256 lastChangeBlock) = balancerVault.getPoolTokens(balancerPoolId);
-        for (uint8 i = 0; i < numTokens; i++) {
-            uint256 tokenPooled = totalBalances[i].mul(balanceOfBpt()).div(bpt.totalSupply());
-            if (tokenPooled > 0) {
-                IERC20 token = tokens[i];
-                if (token != want) {
-                    IBalancerPool.SwapRequest memory request = _getSwapRequest(token, tokenPooled, lastChangeBlock);
-                    // now denomated in want
-                    tokenPooled = bpt.onSwap(request, totalBalances, i, tokenIndex);
+        uint bpts = balanceOfBpt();
+        if (bpts > 0) {
+            (IERC20[] memory tokens,uint256[] memory totalBalances,uint256 lastChangeBlock) = balancerVault.getPoolTokens(balancerPoolId);
+            for (uint8 i = 0; i < numTokens; i++) {
+                uint256 tokenPooled = totalBalances[i].mul(bpts).div(bpt.totalSupply());
+
+                if (tokenPooled > 0) {
+                    if (tokens[i] != want) {
+                        // single step bc doing one swap within own pool i.e. wsteth -> weth
+                        IBalancerVault.BatchSwapStep[] memory steps = new IBalancerVault.BatchSwapStep[](1);
+                        steps[0] = IBalancerVault.BatchSwapStep(balancerPoolId,
+                            tokenIndex == 0 ? 1 : 0,
+                            tokenIndex,
+                            tokenPooled,
+                            abi.encode(0)
+                        );
+
+                        // 2 assets of the pool, ordered by trade direction i.e. wsteth -> weth
+                        IAsset[] memory path = new IAsset[](2);
+                        path[0] = IAsset(address(tokenIndex == 0 ? tokens[1] : tokens[0]));
+                        path[1] = IAsset(address(want));
+
+                        tokenPooled = uint(- balancerVault.queryBatchSwap(IBalancerVault.SwapKind.GIVEN_IN,
+                            steps,
+                            path,
+                            IBalancerVault.FundManagement(address(this), false, address(this), false))[1]);
+                    }
+                    totalWantPooled += tokenPooled;
                 }
-                totalWantPooled += tokenPooled;
             }
         }
         return totalWantPooled;

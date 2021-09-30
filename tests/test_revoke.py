@@ -9,7 +9,7 @@ def test_revoke_strategy_from_vault(
     vault.deposit(amount, {"from": user})
     chain.sleep(1)
     strategy.harvest()
-    assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount
+    assert pytest.approx(strategy.estimateTotalAssets({'from': user}).return_value, rel=RELATIVE_APPROX) == amount
 
     # In order to pass this tests, you will need to implement prepareReturn.
     vault.revokeStrategy(strategy.address, {"from": gov})
@@ -26,7 +26,7 @@ def test_revoke_strategy_from_strategy(
     vault.deposit(amount, {"from": user})
     chain.sleep(1)
     strategy.harvest()
-    assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount
+    assert pytest.approx(strategy.estimateTotalAssets({'from': user}).return_value, rel=RELATIVE_APPROX) == amount
 
     strategy.setEmergencyExit()
     chain.sleep(1)
