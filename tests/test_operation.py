@@ -118,7 +118,7 @@ def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RE
 
 
 def test_change_debt(
-        chain, gov, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, bal, bal_whale, ldo, ldo_whale
+        chain, gov, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, bal, bal_whale, ldo, ldo_whale, web3
 ):
     # Deposit to the vault and harvest
     token.approve(vault.address, amount, {"from": user})
@@ -141,11 +141,19 @@ def test_change_debt(
 
     vault.updateStrategyDebtRatio(strategy.address, 5_000, {"from": gov})
     chain.sleep(1)
-    strategy.harvest({"from": strategist})
+    web3.provider.make_request("miner_stop", [])
+
+    strategy.harvest({"from": strategist, "required_confs": 0})
     util.stateOfStrat("after harvest 5000", strategy, token)
 
+    eta = strategy.estimateTotalAssets({"from": gov}).return_value
+    # When ganache is started with automing this is the only way to get two transactions within the same block.
+
+    web3.provider.make_request("evm_mine", [chain.time() + 5])
+    web3.provider.make_request("miner_start", [])
+
     # compounded slippage
-    assert pytest.approx(strategy.estimateTotalAssets({"from": gov}).return_value, rel=RELATIVE_APPROX) == half
+    assert pytest.approx(eta, rel=RELATIVE_APPROX) == half
 
     vault.updateStrategyDebtRatio(strategy.address, 0, {"from": gov})
     chain.sleep(1)
