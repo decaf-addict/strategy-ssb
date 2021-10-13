@@ -27,12 +27,6 @@ def rewards(accounts):
 def guardian(accounts):
     yield accounts[2]
 
-
-@pytest.fixture
-def management(accounts):
-    yield accounts[3]
-
-
 @pytest.fixture
 def strategist(accounts):
     yield accounts[4]
@@ -143,22 +137,20 @@ def live_dai_vault():
 
 
 @pytest.fixture
-def vault(pm, gov, rewards, guardian, management, token):
+def vault(pm, gov, rewards, guardian, token):
     Vault = pm(config["dependencies"][0]).Vault
     vault = guardian.deploy(Vault)
-    vault.initialize(token, gov, rewards, "", "", guardian, management, {"from": gov})
+    vault.initialize(token, gov, rewards, "", "", guardian, {"from": gov})
     vault.setDepositLimit(2 ** 256 - 1, {"from": gov})
-    vault.setManagement(management, {"from": gov})
     yield vault
 
 
 @pytest.fixture
-def vault2(pm, gov, rewards, guardian, management, token2):
+def vault2(pm, gov, rewards, guardian, token2):
     Vault = pm(config["dependencies"][0]).Vault
     vault = guardian.deploy(Vault)
-    vault.initialize(token2, gov, rewards, "", "", guardian, management, {"from": gov})
+    vault.initialize(token2, gov, rewards, "", "", guardian, {"from": gov})
     vault.setDepositLimit(2 ** 256 - 1, {"from": gov})
-    vault.setManagement(management, {"from": gov})
     yield vault
 
 
@@ -214,13 +206,13 @@ def swapStepsLdo2(ldoWethPoolId, wethToken2PoolId, ldo, weth, token2):
 
 
 @pytest.fixture
-def strategy(strategist, keeper, vault, Strategy, gov, balancer_vault, pool, bal, ldo, management, swapStepsBal,
+def strategy(strategist, keeper, vault, Strategy, gov, balancer_vault, pool, bal, ldo, swapStepsBal,
              swapStepsLdo):
     strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, 5, 5, 1_000_000, 2 * 60 * 60)
     strategy.setKeeper(keeper)
     strategy.whitelistRewards(bal, swapStepsBal, {'from': gov})
     strategy.whitelistRewards(ldo, swapStepsLdo, {'from': gov})
-    vault.addStrategy(strategy, 10_000, 0, 2 ** 256 - 1, 1_000, {"from": gov})
+    vault.addStrategy(strategy, 10_000, 2 ** 256 - 1, 1_000, {"from": gov})
     yield strategy
 
 

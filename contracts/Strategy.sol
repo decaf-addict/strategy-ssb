@@ -6,17 +6,17 @@ pragma solidity 0.6.12;
 pragma experimental ABIEncoderV2;
 
 // These are the core Yearn libraries
-import {BaseStrategy, StrategyParams} from "@yearnvaults/contracts/BaseStrategy.sol";
 import {SafeERC20, SafeMath, IERC20, Address} from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Math} from "@openzeppelin/contracts/math/Math.sol";
 import "../interfaces/BalancerV2.sol";
+import "./BaseStrategyEdited.sol";
 
 interface IName {
     function name() external view returns (string memory);
 }
 
-contract Strategy is BaseStrategy {
+contract Strategy is BaseStrategyEdited {
     using SafeERC20 for IERC20;
     using Address for address;
     using SafeMath for uint256;
@@ -62,37 +62,9 @@ contract Strategy is BaseStrategy {
         uint256 _maxSlippageOut,
         uint256 _maxSingleDeposit,
         uint256 _minDepositPeriod)
-    public BaseStrategy(_vault){
-        _initializeStrat(_vault, _balancerVault, _balancerPool, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod);
-    }
-
-    function initialize(
-        address _vault,
-        address _strategist,
-        address _rewards,
-        address _keeper,
-        address _balancerVault,
-        address _balancerPool,
-        uint256 _maxSlippageIn,
-        uint256 _maxSlippageOut,
-        uint256 _maxSingleDeposit,
-        uint256 _minDepositPeriod
-    ) external {
-        _initialize(_vault, _strategist, _rewards, _keeper);
-        _initializeStrat(_vault, _balancerVault, _balancerPool, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod);
-    }
-
-    function _initializeStrat(
-        address _vault,
-        address _balancerVault,
-        address _balancerPool,
-        uint256 _maxSlippageIn,
-        uint256 _maxSlippageOut,
-        uint256 _maxSingleDeposit,
-        uint256 _minDepositPeriod)
-    internal {
+    public BaseStrategyEdited(_vault){
         require(address(bpt) == address(0x0), "Strategy already initialized!");
-        healthCheck = address(0xDDCea799fF1699e98EDF118e0629A974Df7DF012); // health.ychad.eth
+
         bpt = IBalancerPool(_balancerPool);
         balancerPoolId = bpt.getPoolId();
         balancerVault = IBalancerVault(_balancerVault);
@@ -116,43 +88,6 @@ contract Strategy is BaseStrategy {
 
         want.safeApprove(address(balancerVault), max);
     }
-
-    event Cloned(address indexed clone);
-
-    function clone(
-        address _vault,
-        address _strategist,
-        address _rewards,
-        address _keeper,
-        address _balancerVault,
-        address _balancerPool,
-        uint256 _maxSlippageIn,
-        uint256 _maxSlippageOut,
-        uint256 _maxSingleDeposit,
-        uint256 _minDepositPeriod
-    ) external returns (address payable newStrategy) {
-        require(isOriginal);
-
-        bytes20 addressBytes = bytes20(address(this));
-
-        assembly {
-        // EIP-1167 bytecode
-            let clone_code := mload(0x40)
-            mstore(clone_code, 0x3d602d80600a3d3981f3363d3d373d3d3d363d73000000000000000000000000)
-            mstore(add(clone_code, 0x14), addressBytes)
-            mstore(add(clone_code, 0x28), 0x5af43d82803e903d91602b57fd5bf30000000000000000000000000000000000)
-            newStrategy := create(0, clone_code, 0x37)
-        }
-
-        Strategy(newStrategy).initialize(
-            _vault, _strategist, _rewards, _keeper, _balancerVault, _balancerPool, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod
-        );
-
-        emit Cloned(newStrategy);
-    }
-
-
-    // ******** OVERRIDE THESE METHODS FROM BASE CONTRACT ************
 
     function name() external view override returns (string memory) {
         // Add your own name here, suggestion e.g. "StrategyCreamYFI"
@@ -214,7 +149,7 @@ contract Strategy is BaseStrategy {
 
     function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _liquidatedAmount, uint256 _loss){
         if (estimatedTotalAssets() < _amountNeeded) {
-            _liquidatedAmount = liquidateAllPositions();
+            _liquidatedAmount = _liquidateAllPositions();
             return (_liquidatedAmount, _amountNeeded.sub(_liquidatedAmount));
         }
 
@@ -233,7 +168,7 @@ contract Strategy is BaseStrategy {
         }
     }
 
-    function liquidateAllPositions() internal override returns (uint256 liquidated) {
+    function _liquidateAllPositions() internal returns (uint256 liquidated) {
         uint eta = estimatedTotalAssets();
         uint256 bpts = balanceOfBpt();
         if (bpts > 0) {
@@ -260,8 +195,6 @@ contract Strategy is BaseStrategy {
     }
 
     function protectedTokens() internal view override returns (address[] memory){}
-
-    function ethToWant(uint256 _amtInWei) public view override returns (uint256){}
 
     function tendTrigger(uint256 callCostInWei) public view override returns (bool) {
         return now.sub(lastDepositTime) > minDepositPeriod && balanceOfWant() > 0;
@@ -376,14 +309,14 @@ contract Strategy is BaseStrategy {
     }
 
     // for partnership rewards like Lido or airdrops
-    function whitelistRewards(address _rewardToken, SwapSteps memory _steps) public onlyVaultManagers {
+    function whitelistRewards(address _rewardToken, SwapSteps memory _steps) public onlyKeepers {
         IERC20 token = IERC20(_rewardToken);
         token.approve(address(balancerVault), max);
         rewardTokens.push(token);
         swapSteps.push(_steps);
     }
 
-    function delistAllRewards() public onlyVaultManagers {
+    function delistAllRewards() public onlyKeepers {
         for (uint i = 0; i < rewardTokens.length; i++) {
             rewardTokens[i].approve(address(balancerVault), 0);
         }
@@ -396,7 +329,7 @@ contract Strategy is BaseStrategy {
         return rewardTokens.length;
     }
 
-    function setParams(uint256 _maxSlippageIn, uint256 _maxSlippageOut, uint256 _maxSingleDeposit, uint256 _minDepositPeriod) public onlyVaultManagers {
+    function setParams(uint256 _maxSlippageIn, uint256 _maxSlippageOut, uint256 _maxSingleDeposit, uint256 _minDepositPeriod) public onlyKeepers {
         require(_maxSlippageIn <= basisOne, "maxSlippageIn too high");
         maxSlippageIn = _maxSlippageIn;
 
