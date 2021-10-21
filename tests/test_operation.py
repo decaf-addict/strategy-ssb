@@ -44,8 +44,7 @@ def test_emergency_exit(
 
 
 def test_profitable_harvest(
-        chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, bal, bal_whale, ldo,
-        ldo_whale, management
+        chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, beets, beets_whale, management
 ):
     # Deposit to the vault
     token.approve(vault.address, amount, {"from": user})
@@ -58,22 +57,27 @@ def test_profitable_harvest(
     assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount
 
     before_pps = vault.pricePerShare()
-    util.airdrop_rewards(strategy, bal, bal_whale, ldo, ldo_whale)
 
     # Harvest 2: Realize profit
-    chain.sleep(1)
+
+    util.airdrop_rewards(strategy, beets, beets_whale)
+
     strategy.harvest({"from": strategist})
     chain.sleep(3600 * 6)  # 6 hrs needed for profits to unlock
     chain.mine(1)
-    profit = token.balanceOf(vault.address)  # Profits go to vault
+    # do a second harvest so the first harvest's stake is sold
+    strategy.harvest({"from": strategist})
+    chain.sleep(3600 * 6)
+    chain.mine(1)
+
+    profit = token.balanceOf(vault.address)
 
     assert strategy.estimatedTotalAssets() + profit > amount
     assert vault.pricePerShare() > before_pps
 
 
-def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, bal, bal_whale,
-                     ldo, gov,
-                     ldo_whale):
+def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, beets, beets_whale,
+                     gov):
     # Deposit to the vault
     token.approve(vault.address, amount, {"from": user})
     vault.deposit(amount, {"from": user})
@@ -94,14 +98,21 @@ def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RE
         chain.mine(1)
 
     before_pps = vault.pricePerShare()
-    util.airdrop_rewards(strategy, bal, bal_whale, ldo, ldo_whale)
+    util.airdrop_rewards(strategy, beets, beets_whale)
+    util.stateOfStrat("after airdrop", strategy, beets)
 
     # Harvest 2: Realize profit
     chain.sleep(1)
     strategy.harvest({"from": strategist})
     chain.sleep(3600 * 6)  # 6 hrs needed for profits to unlock
     chain.mine(1)
+    util.stateOfStrat("first harvest", strategy, beets)
+    # do a second harvest so the first harvest's stake is sold
+    strategy.harvest({"from": strategist})
+    chain.sleep(3600 * 6)
+    chain.mine(1)
     profit = token.balanceOf(vault.address)  # Profits go to vault
+    util.stateOfStrat("second harvest", strategy, beets)
 
     slippageIn = amount * strategy.maxSlippageIn() / 10000
     assert strategy.estimatedTotalAssets() + profit > (amount - slippageIn)
@@ -114,11 +125,11 @@ def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RE
 
     half = int(amount / 2)
     # profits
-    assert strategy.estimatedTotalAssets() >= half - slippageIn/2
+    assert strategy.estimatedTotalAssets() >= half - slippageIn / 2
 
 
 def test_change_debt(
-        chain, gov, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, bal, bal_whale, ldo, ldo_whale
+        chain, gov, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, beets, beets_whale
 ):
     # Deposit to the vault and harvest
     token.approve(vault.address, amount, {"from": user})
@@ -136,16 +147,22 @@ def test_change_debt(
     assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount
 
     util.stateOfStrat("before airdrop", strategy, token)
-    util.airdrop_rewards(strategy, bal, bal_whale, ldo, ldo_whale)
+    util.airdrop_rewards(strategy, beets, beets_whale)
     util.stateOfStrat("after airdrop", strategy, token)
 
     vault.updateStrategyDebtRatio(strategy.address, 5_000, {"from": gov})
-    chain.sleep(1)
     strategy.harvest({"from": strategist})
+    chain.sleep(3600 * 6)
+    chain.mine(1)
+    # do a second harvest so the first harvest's stake is sold
+    strategy.harvest({"from": strategist})
+    chain.sleep(3600 * 6)
+    chain.mine(1)
     util.stateOfStrat("after harvest 5000", strategy, token)
 
     # compounded slippage
-    assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == half
+    assert pytest.approx(strategy.estimatedTotalAssets(),
+                         rel=RELATIVE_APPROX) == half or strategy.estimatedTotalAssets() >= half
 
     vault.updateStrategyDebtRatio(strategy.address, 0, {"from": gov})
     chain.sleep(1)
@@ -156,7 +173,7 @@ def test_change_debt(
                                                                      rel=RELATIVE_APPROX) >= amount
 
 
-def test_sweep(gov, vault, strategy, token, user, amount, weth, weth_amout):
+def test_sweep(gov, vault, strategy, token, user, amount, wftm, wftm_amount):
     # Strategy want token doesn't work
     token.transfer(strategy, amount, {"from": user})
     assert token.address == strategy.want()
@@ -168,21 +185,16 @@ def test_sweep(gov, vault, strategy, token, user, amount, weth, weth_amout):
     with brownie.reverts("!shares"):
         strategy.sweep(vault.address, {"from": gov})
 
-    # # Protected token doesn't work
-    # for i in range(strategy.numRewards()):
-    #     with brownie.reverts("!protected"):
-    #         strategy.sweep(strategy.rewardTokens(i), {"from": gov})
-
-    before_balance = weth.balanceOf(gov)
-    weth.transfer(strategy, weth_amout, {"from": user})
-    assert weth.address != strategy.want()
-    assert weth.balanceOf(user) == 0
-    strategy.sweep(weth, {"from": gov})
-    assert weth.balanceOf(gov) == weth_amout + before_balance
+    before_balance = wftm.balanceOf(gov)
+    wftm.transfer(strategy, wftm_amount, {"from": user})
+    assert wftm.address != strategy.want()
+    assert wftm.balanceOf(user) == 0
+    strategy.sweep(wftm, {"from": gov})
+    assert wftm.balanceOf(gov) == wftm_amount + before_balance
 
 
 def test_triggers(
-        chain, gov, vault, strategy, token, amount, user, weth, weth_amout, strategist, bal, bal_whale, ldo, ldo_whale,
+        chain, gov, vault, strategy, token, amount, user, wftm, wftm_amount, strategist, beets, beets_whale,
         token_whale
 ):
     # Deposit to the vault and harvest
@@ -192,20 +204,6 @@ def test_triggers(
     chain.sleep(1)
     strategy.harvest({"from": strategist})
 
-    assert strategy.harvestTrigger(0) == False
-    util.airdrop_rewards(strategy, bal, bal_whale, ldo, ldo_whale)
-    assert strategy.harvestTrigger(0) == True
+    strategy.harvestTrigger(0)
+    strategy.tendTrigger(0)
 
-    assert strategy.tendTrigger(0) == False
-    chain.sleep(strategy.minDepositPeriod() + 1)
-    chain.mine(1)
-    assert strategy.tendTrigger(0) == True
-
-
-def test_rewards(
-        strategy, strategist, gov
-):
-    # added in setup
-    assert strategy.numRewards() == 2
-    strategy.delistAllRewards({'from': gov})
-    assert strategy.numRewards() == 0
