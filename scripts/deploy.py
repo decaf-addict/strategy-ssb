@@ -55,4 +55,7 @@ def main():
     if input("Deploy Strategy? y/[N]: ").lower() != "y":
         return
 
-    strategy = Strategy.deploy(vault, {"from": dev}, publish_source=publish_source)
+    balancer_vault = "0x20dd72Ed959b6147912C2e529F0a0C651c33c9ce"
+    pool = "0xD163415BD34EF06f57C58D2AEd5A5478AfB464cC"
+    masterchef = "0x8166994d9ebBe5829EC86Bd81258149B87faCfd3"
+    strategy = Strategy.deploy(vault, balancer_vault, pool, masterchef, 50, 50, 100_000, 2 * 60 * 60, 10, {"from": dev}, publish_source=publish_source)

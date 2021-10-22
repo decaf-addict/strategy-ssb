@@ -384,8 +384,10 @@ contract Strategy is BaseStrategy {
 
     function setMasterChef(address _masterChef) public onlyVaultManagers {
         bpt.approve(address(masterChef), 0);
+        stakeBpt.approve(address(masterChef), 0);
         masterChef = IBeethovenxMasterChef(_masterChef);
         bpt.approve(address(masterChef), max);
+        stakeBpt.approve(address(masterChef), max);
     }
 
     // stake all beets
