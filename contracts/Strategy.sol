@@ -370,7 +370,7 @@ contract Strategy is BaseStrategy {
         minDepositPeriod = _minDepositPeriod;
     }
 
-    function _enforceSlippageOut(uint _intended, uint _actual) internal {
+    function _enforceSlippageOut(uint _intended, uint _actual) internal view {
         // enforce that amount exited didn't slip beyond our tolerance
         // just in case there's positive slippage
         uint256 exitSlipped = _intended > _actual ? _intended.sub(_actual) : 0;
