@@ -11,10 +11,7 @@ import {SafeERC20, SafeMath, IERC20, Address} from "@openzeppelin/contracts/toke
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Math} from "@openzeppelin/contracts/math/Math.sol";
 import "../interfaces/BalancerV2.sol";
-
-interface IName {
-    function name() external view returns (string memory);
-}
+import "../interfaces/MasterChef.sol";
 
 contract Strategy is BaseStrategy {
     using SafeERC20 for IERC20;
@@ -24,13 +21,20 @@ contract Strategy is BaseStrategy {
     IERC20 internal constant weth = IERC20(address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2));
     IBalancerVault public balancerVault;
     IBalancerPool public bpt;
-    IERC20[] public rewardTokens;
+    IERC20 public rewardToken;
     IAsset[] internal assets;
-    SwapSteps[] internal swapSteps;
+    SwapSteps internal swapSteps;
     uint256[] internal minAmountsOut;
     bytes32 public balancerPoolId;
     uint8 public numTokens;
     uint8 public tokenIndex;
+
+    // masterchef
+    IBeethovenxMasterChef internal masterChef;
+    IAsset[] internal stakeAssets;
+    IBalancerPool internal stakeBpt;
+    uint internal stakeTokenIndex;
+    uint internal stakePercentage;
 
     struct SwapSteps {
         bytes32[] poolIds;
@@ -51,48 +55,22 @@ contract Strategy is BaseStrategy {
     uint256 public maxSingleDeposit;
     uint256 public minDepositPeriod; // seconds
     uint256 public lastDepositTime;
+    uint256 internal masterChefPoolId;
+    uint256 internal masterChefStakePoolId;
     uint256 internal constant basisOne = 10000;
-    bool internal isOriginal = true;
 
     constructor(
         address _vault,
         address _balancerVault,
         address _balancerPool,
+        address _masterChef,
         uint256 _maxSlippageIn,
         uint256 _maxSlippageOut,
         uint256 _maxSingleDeposit,
-        uint256 _minDepositPeriod)
+        uint256 _minDepositPeriod,
+        uint256 _masterChefPoolId)
     public BaseStrategy(_vault){
-        _initializeStrat(_vault, _balancerVault, _balancerPool, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod);
-    }
-
-    function initialize(
-        address _vault,
-        address _strategist,
-        address _rewards,
-        address _keeper,
-        address _balancerVault,
-        address _balancerPool,
-        uint256 _maxSlippageIn,
-        uint256 _maxSlippageOut,
-        uint256 _maxSingleDeposit,
-        uint256 _minDepositPeriod
-    ) external {
-        _initialize(_vault, _strategist, _rewards, _keeper);
-        _initializeStrat(_vault, _balancerVault, _balancerPool, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod);
-    }
-
-    function _initializeStrat(
-        address _vault,
-        address _balancerVault,
-        address _balancerPool,
-        uint256 _maxSlippageIn,
-        uint256 _maxSlippageOut,
-        uint256 _maxSingleDeposit,
-        uint256 _minDepositPeriod)
-    internal {
-        require(address(bpt) == address(0x0), "Strategy already initialized!");
-        healthCheck = address(0xDDCea799fF1699e98EDF118e0629A974Df7DF012); // health.ychad.eth
+        //        healthCheck = address(0xDDCea799fF1699e98EDF118e0629A974Df7DF012);
         bpt = IBalancerPool(_balancerPool);
         balancerPoolId = bpt.getPoolId();
         balancerVault = IBalancerVault(_balancerVault);
@@ -113,44 +91,13 @@ contract Strategy is BaseStrategy {
         maxSingleDeposit = _maxSingleDeposit.mul(10 ** uint256(ERC20(address(want)).decimals()));
         minAmountsOut = new uint256[](numTokens);
         minDepositPeriod = _minDepositPeriod;
+        masterChefPoolId = _masterChefPoolId;
+        masterChef = IBeethovenxMasterChef(_masterChef);
+        require(masterChef.lpTokens(masterChefPoolId) == address(bpt), "Wrong MasterChef Pool!");
 
         want.safeApprove(address(balancerVault), max);
+        bpt.approve(address(masterChef), max);
     }
-
-    event Cloned(address indexed clone);
-
-    function clone(
-        address _vault,
-        address _strategist,
-        address _rewards,
-        address _keeper,
-        address _balancerVault,
-        address _balancerPool,
-        uint256 _maxSlippageIn,
-        uint256 _maxSlippageOut,
-        uint256 _maxSingleDeposit,
-        uint256 _minDepositPeriod
-    ) external returns (address payable newStrategy) {
-        require(isOriginal);
-
-        bytes20 addressBytes = bytes20(address(this));
-
-        assembly {
-        // EIP-1167 bytecode
-            let clone_code := mload(0x40)
-            mstore(clone_code, 0x3d602d80600a3d3981f3363d3d373d3d3d363d73000000000000000000000000)
-            mstore(add(clone_code, 0x14), addressBytes)
-            mstore(add(clone_code, 0x28), 0x5af43d82803e903d91602b57fd5bf30000000000000000000000000000000000)
-            newStrategy := create(0, clone_code, 0x37)
-        }
-
-        Strategy(newStrategy).initialize(
-            _vault, _strategist, _rewards, _keeper, _balancerVault, _balancerPool, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod
-        );
-
-        emit Cloned(newStrategy);
-    }
-
 
     // ******** OVERRIDE THESE METHODS FROM BASE CONTRACT ************
 
@@ -170,8 +117,17 @@ contract Strategy is BaseStrategy {
 
         uint256 beforeWant = balanceOfWant();
 
-        // 2 forms of profit. Incentivized rewards (BAL+other) and pool fees (want)
         collectTradingFees();
+        // claim beets
+        claimRewards();
+
+        // calc amount beets to stake
+        uint256 toStake = balanceOfReward().mul(stakePercentage).div(basisOne);
+        // unstake all staked beets
+        unstake();
+        // stake pre-calc amount of beets for higher apy
+        stake(toStake);
+        // sell the % not staking
         sellRewards();
 
         uint256 afterWant = balanceOfWant();
@@ -191,25 +147,25 @@ contract Strategy is BaseStrategy {
             return;
         }
 
+        // put want into lp then put want-lp into masterchef
         uint256 pooledBefore = balanceOfPooled();
-        uint256[] memory maxAmountsIn = new uint256[](numTokens);
         uint256 amountIn = Math.min(maxSingleDeposit, balanceOfWant());
-        maxAmountsIn[tokenIndex] = amountIn;
-
-        if (maxAmountsIn[tokenIndex] > 0) {
-            uint256[] memory amountsIn = new uint256[](numTokens);
-            amountsIn[tokenIndex] = amountIn;
-            bytes memory userData = abi.encode(IBalancerVault.JoinKind.EXACT_TOKENS_IN_FOR_BPT_OUT, amountsIn, 0);
-            IBalancerVault.JoinPoolRequest memory request = IBalancerVault.JoinPoolRequest(assets, maxAmountsIn, userData, false);
-            balancerVault.joinPool(balancerPoolId, address(this), address(this), request);
+        if (joinPool(amountIn, assets, numTokens, tokenIndex, balancerPoolId)) {
+            // put all want-lp into masterchef
+            masterChef.deposit(masterChefPoolId, balanceOfBpt(), address(this));
 
             uint256 pooledDelta = balanceOfPooled().sub(pooledBefore);
             uint256 joinSlipped = amountIn > pooledDelta ? amountIn.sub(pooledDelta) : 0;
             uint256 maxLoss = amountIn.mul(maxSlippageIn).div(basisOne);
-
             require(joinSlipped <= maxLoss, "Exceeded maxSlippageIn!");
             lastDepositTime = now;
         }
+
+
+        // claim all beets
+        claimRewards();
+        // and stake all
+        stakeAllRewards();
     }
 
     function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _liquidatedAmount, uint256 _loss){
@@ -222,7 +178,12 @@ contract Strategy is BaseStrategy {
         if (_amountNeeded > looseAmount) {
             uint256 toExitAmount = _amountNeeded.sub(looseAmount);
 
-            _sellBptForExactToken(toExitAmount);
+            // withdraw all bpt out of masterchef
+            masterChef.withdrawAndHarvest(masterChefPoolId, balanceOfBptInMasterChef(), address(this));
+            // sell some bpt
+            exitPoolExactToken(toExitAmount);
+            // put remaining bpt back into masterchef
+            masterChef.deposit(masterChefPoolId, balanceOfBpt(), address(this));
 
             _liquidatedAmount = Math.min(balanceOfWant(), _amountNeeded);
             _loss = _amountNeeded.sub(_liquidatedAmount);
@@ -235,6 +196,9 @@ contract Strategy is BaseStrategy {
 
     function liquidateAllPositions() internal override returns (uint256 liquidated) {
         uint eta = estimatedTotalAssets();
+        // withdraw all bpt out of masterchef
+        masterChef.withdrawAndHarvest(masterChefPoolId, balanceOfBptInMasterChef(), address(this));
+        // sell all bpt
         uint256 bpts = balanceOfBpt();
         if (bpts > 0) {
             // exit entire position for single token. Could revert due to single exit limit enforced by balancer
@@ -245,17 +209,16 @@ contract Strategy is BaseStrategy {
 
         liquidated = balanceOfWant();
         _enforceSlippageOut(eta, liquidated);
+
         return liquidated;
     }
 
     function prepareMigration(address _newStrategy) internal override {
-        bpt.transfer(_newStrategy, balanceOfBpt());
-        for (uint i = 0; i < rewardTokens.length; i++) {
-            IERC20 token = rewardTokens[i];
-            uint256 balance = token.balanceOf(address(this));
-            if (balance > 0) {
-                token.transfer(_newStrategy, balance);
-            }
+        masterChef.withdrawAndHarvest(masterChefPoolId, balanceOfBptInMasterChef(), address(_newStrategy));
+        masterChef.withdrawAndHarvest(masterChefStakePoolId, balanceOfStakeBptInMasterChef(), address(_newStrategy));
+        uint256 rewards = balanceOfReward();
+        if (rewards > 0) {
+            rewardToken.transfer(_newStrategy, rewards);
         }
     }
 
@@ -267,51 +230,38 @@ contract Strategy is BaseStrategy {
         return now.sub(lastDepositTime) > minDepositPeriod && balanceOfWant() > 0;
     }
 
-    function harvestTrigger(uint256 callCostInWei) public view override returns (bool){
-        bool hasRewards;
-        for (uint8 i = 0; i < rewardTokens.length; i++) {
-            ERC20 rewardToken = ERC20(address(rewardTokens[i]));
+    // HELPERS //
 
-            uint decReward = rewardToken.decimals();
-            uint decWant = ERC20(address(want)).decimals();
-            if (rewardToken.balanceOf(address(this)) > 10 ** (decReward > decWant ? decReward.sub(decWant) : 0)) {
-                hasRewards = true;
-                break;
-            }
-        }
-        return super.harvestTrigger(callCostInWei) && hasRewards;
+    // claim all beets rewards from masterchef
+    function claimRewards() internal {
+        masterChef.harvest(masterChefPoolId, address(this));
+        masterChef.harvest(masterChefStakePoolId, address(this));
     }
 
-
-    // HELPERS //
     function sellRewards() internal {
-        for (uint8 i = 0; i < rewardTokens.length; i++) {
-            ERC20 rewardToken = ERC20(address(rewardTokens[i]));
-            uint256 amount = rewardToken.balanceOf(address(this));
+        uint256 amount = balanceOfReward();
+        uint decReward = ERC20(address(rewardToken)).decimals();
+        uint decWant = ERC20(address(want)).decimals();
 
-            uint decReward = rewardToken.decimals();
-            uint decWant = ERC20(address(want)).decimals();
-
-            if (amount > 10 ** (decReward > decWant ? decReward.sub(decWant) : 0)) {
-                uint length = swapSteps[i].poolIds.length;
-                IBalancerVault.BatchSwapStep[] memory steps = new IBalancerVault.BatchSwapStep[](length);
-                int[] memory limits = new int[](length + 1);
-                limits[0] = int(amount);
-                for (uint j = 0; j < length; j++) {
-                    steps[j] = IBalancerVault.BatchSwapStep(swapSteps[i].poolIds[j],
-                        j,
-                        j + 1,
-                        j == 0 ? amount : 0,
-                        abi.encode(0)
-                    );
-                }
-                balancerVault.batchSwap(IBalancerVault.SwapKind.GIVEN_IN,
-                    steps,
-                    swapSteps[i].assets,
-                    IBalancerVault.FundManagement(address(this), false, address(this), false),
-                    limits,
-                    now + 10);
+        if (amount > 10 ** (decReward > decWant ? decReward.sub(decWant) : 0)) {
+            uint length = swapSteps.poolIds.length;
+            IBalancerVault.BatchSwapStep[] memory steps = new IBalancerVault.BatchSwapStep[](length);
+            int[] memory limits = new int[](length + 1);
+            limits[0] = int(amount);
+            for (uint j = 0; j < length; j++) {
+                steps[j] = IBalancerVault.BatchSwapStep(swapSteps.poolIds[j],
+                    j,
+                    j + 1,
+                    j == 0 ? amount : 0,
+                    abi.encode(0)
+                );
             }
+            balancerVault.batchSwap(IBalancerVault.SwapKind.GIVEN_IN,
+                steps,
+                swapSteps.assets,
+                IBalancerVault.FundManagement(address(this), false, address(this), false),
+                limits,
+                now + 10);
         }
     }
 
@@ -320,7 +270,7 @@ contract Strategy is BaseStrategy {
         uint256 debt = vault.strategies(address(this)).totalDebt;
         if (total > debt) {
             uint256 profit = total.sub(debt);
-            _sellBptForExactToken(profit);
+            exitPoolExactToken(profit);
         }
     }
 
@@ -332,15 +282,27 @@ contract Strategy is BaseStrategy {
         return bpt.balanceOf(address(this));
     }
 
-    function balanceOfReward(uint256 index) public view returns (uint256 _amount){
-        return rewardTokens[index].balanceOf(address(this));
+    function balanceOfBptInMasterChef() public view returns (uint256 _amount){
+        (_amount,) = masterChef.userInfo(masterChefPoolId, address(this));
+    }
+
+    function balanceOfStakeBptInMasterChef() public view returns (uint256 _amount){
+        (_amount,) = masterChef.userInfo(masterChefStakePoolId, address(this));
+    }
+
+    function balanceOfReward() public view returns (uint256 _amount){
+        return rewardToken.balanceOf(address(this));
+    }
+
+    function balanceOfPendingReward() public view returns (uint256 _amount){
+        return masterChef.pendingBeets(masterChefStakePoolId, address(this)).add(masterChef.pendingBeets(masterChefPoolId, address(this)));
     }
 
     function balanceOfPooled() public view returns (uint256 _amount){
         uint256 totalWantPooled;
-        (IERC20[] memory tokens,uint256[] memory totalBalances,uint256 lastChangeBlock) = balancerVault.getPoolTokens(balancerPoolId);
+        (IERC20[] memory tokens, uint256[] memory totalBalances, uint256 lastChangeBlock) = balancerVault.getPoolTokens(balancerPoolId);
         for (uint8 i = 0; i < numTokens; i++) {
-            uint256 tokenPooled = totalBalances[i].mul(balanceOfBpt()).div(bpt.totalSupply());
+            uint256 tokenPooled = totalBalances[i].mul(balanceOfBpt().add(balanceOfBptInMasterChef())).div(bpt.totalSupply());
             if (tokenPooled > 0) {
                 IERC20 token = tokens[i];
                 if (token != want) {
@@ -367,7 +329,7 @@ contract Strategy is BaseStrategy {
         );
     }
 
-    function _sellBptForExactToken(uint256 _amountTokenOut) internal {
+    function exitPoolExactToken(uint256 _amountTokenOut) internal {
         uint256[] memory amountsOut = new uint256[](numTokens);
         amountsOut[tokenIndex] = _amountTokenOut;
         bytes memory userData = abi.encode(IBalancerVault.ExitKind.BPT_IN_FOR_EXACT_TOKENS_OUT, amountsOut, balanceOfBpt());
@@ -375,25 +337,22 @@ contract Strategy is BaseStrategy {
         balancerVault.exitPool(balancerPoolId, address(this), address(this), request);
     }
 
-    // for partnership rewards like Lido or airdrops
-    function whitelistRewards(address _rewardToken, SwapSteps memory _steps) public onlyVaultManagers {
-        IERC20 token = IERC20(_rewardToken);
-        token.approve(address(balancerVault), max);
-        rewardTokens.push(token);
-        swapSteps.push(_steps);
-    }
-
-    function delistAllRewards() public onlyVaultManagers {
-        for (uint i = 0; i < rewardTokens.length; i++) {
-            rewardTokens[i].approve(address(balancerVault), 0);
+    function joinPool(uint256 _amountIn, IAsset[] memory _assets, uint256 _numTokens, uint256 _tokenIndex, bytes32 _poolId) internal returns (bool _joined){
+        uint256[] memory maxAmountsIn = new uint256[](_numTokens);
+        maxAmountsIn[_tokenIndex] = _amountIn;
+        if (_amountIn > 0) {
+            bytes memory userData = abi.encode(IBalancerVault.JoinKind.EXACT_TOKENS_IN_FOR_BPT_OUT, maxAmountsIn, 0);
+            IBalancerVault.JoinPoolRequest memory request = IBalancerVault.JoinPoolRequest(_assets, maxAmountsIn, userData, false);
+            balancerVault.joinPool(_poolId, address(this), address(this), request);
+            return true;
         }
-        IERC20[] memory noRewardTokens;
-        rewardTokens = noRewardTokens;
-        delete swapSteps;
+        return false;
     }
 
-    function numRewards() public view returns (uint256 _num){
-        return rewardTokens.length;
+    function whitelistReward(address _rewardToken, SwapSteps memory _steps) public onlyVaultManagers {
+        rewardToken = IERC20(_rewardToken);
+        rewardToken.approve(address(balancerVault), max);
+        swapSteps = _steps;
     }
 
     function setParams(uint256 _maxSlippageIn, uint256 _maxSlippageOut, uint256 _maxSingleDeposit, uint256 _minDepositPeriod) public onlyVaultManagers {
@@ -407,7 +366,7 @@ contract Strategy is BaseStrategy {
         minDepositPeriod = _minDepositPeriod;
     }
 
-    function _enforceSlippageOut(uint _intended, uint _actual) internal {
+    function _enforceSlippageOut(uint _intended, uint _actual) internal view {
         // enforce that amount exited didn't slip beyond our tolerance
         // just in case there's positive slippage
         uint256 exitSlipped = _intended > _actual ? _intended.sub(_actual) : 0;
@@ -415,9 +374,59 @@ contract Strategy is BaseStrategy {
         require(exitSlipped <= maxLoss, "Exceeded maxSlippageOut!");
     }
 
-    function getSwapSteps() public view returns (SwapSteps[] memory){
+    function getSwapSteps() public view returns (SwapSteps memory){
         return swapSteps;
+    }
+
+    function setMasterChef(address _masterChef) public onlyVaultManagers {
+        bpt.approve(address(masterChef), 0);
+        stakeBpt.approve(address(masterChef), 0);
+        masterChef = IBeethovenxMasterChef(_masterChef);
+        bpt.approve(address(masterChef), max);
+        stakeBpt.approve(address(masterChef), max);
+    }
+
+    // stake all beets
+    function stakeAllRewards() internal {
+        stake(balanceOfReward());
+    }
+
+    // stake beets into beets-lp, then beets-lp into masterchef
+    function stake(uint256 _amount) internal {
+        if (joinPool(_amount, stakeAssets, stakeAssets.length, stakeTokenIndex, stakeBpt.getPoolId())) {
+            masterChef.deposit(masterChefStakePoolId, stakeBpt.balanceOf(address(this)), address(this));
+        }
+    }
+
+    // unstake all beets-lp from masterchef, single sided withdraw all beets from beets-lp
+    function unstake() internal {
+        uint256 bpts = balanceOfStakeBptInMasterChef();
+        masterChef.withdrawAndHarvest(masterChefStakePoolId, bpts, address(this));
+
+        uint256[] memory minAmtsOut = new uint256[](stakeAssets.length);
+        if (bpts > 0) {
+            // exit all beets from beets pool. Don't care about slippage since it's rewards
+            bytes memory userData = abi.encode(IBalancerVault.ExitKind.EXACT_BPT_IN_FOR_ONE_TOKEN_OUT, bpts, stakeTokenIndex);
+            IBalancerVault.ExitPoolRequest memory request = IBalancerVault.ExitPoolRequest(stakeAssets, minAmtsOut, userData, false);
+            balancerVault.exitPool(stakeBpt.getPoolId(), address(this), address(this), request);
+        }
+    }
+
+    function setStakeParams(
+        uint256 _stakePercentageBips,
+        IAsset[] memory _stakeAssets,
+        address _stakePool,
+        uint256 _stakeTokenIndex,
+        uint256 _masterChefStakePoolId
+    ) public onlyVaultManagers {
+        stakePercentage = _stakePercentageBips;
+        stakeAssets = _stakeAssets;
+        masterChefStakePoolId = _masterChefStakePoolId;
+        stakeBpt = IBalancerPool(_stakePool);
+        stakeBpt.approve(address(masterChef), max);
+        stakeTokenIndex = _stakeTokenIndex;
     }
 
     receive() external payable {}
 }
+

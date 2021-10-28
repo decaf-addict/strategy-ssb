@@ -13,7 +13,8 @@ def test_migration(
         user,
         RELATIVE_APPROX,
         balancer_vault,
-        pool
+        pool,
+        masterChef
 ):
     # Deposit to the vault and harvest
     token.approve(vault.address, amount, {"from": user})
@@ -23,6 +24,7 @@ def test_migration(
     assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount
 
     # migrate to a new strategy
-    new_strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, 5, 5, 100_000, 2 * 60 * 60)
+    new_strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, masterChef, 10, 10, 100_000, 2 * 60 * 60,
+                                     10)
     vault.migrateStrategy(strategy, new_strategy, {"from": gov})
     assert (pytest.approx(new_strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount)

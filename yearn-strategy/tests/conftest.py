@@ -61,9 +61,9 @@ def weth():
 
 
 @pytest.fixture
-def weth_amout(user, weth):
-    weth_amout = 10 ** weth.decimals()
-    user.transfer(weth, weth_amout)
+def weth_amout(user, wftm):
+    weth_amout = 10 ** wftm.decimals()
+    user.transfer(wftm, weth_amout)
     yield weth_amout
 
 
