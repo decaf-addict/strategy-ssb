@@ -142,8 +142,6 @@ contract Strategy is BaseStrategy {
         }
     }
 
-    event Debug(string msg, uint val);
-
     function adjustPosition(uint256 _debtOutstanding) internal override {
         if (now - lastDepositTime < minDepositPeriod) {
             return;
@@ -152,13 +150,11 @@ contract Strategy is BaseStrategy {
         // put want into lp then put want-lp into masterchef
         uint256 pooledBefore = balanceOfPooled();
         uint256 amountIn = Math.min(maxSingleDeposit, balanceOfWant());
-        emit Debug("amountIn", amountIn);
         if (joinPool(amountIn, assets, numTokens, tokenIndex, balancerPoolId)) {
             // put all want-lp into masterchef
             masterChef.deposit(masterChefPoolId, balanceOfBpt(), address(this));
 
             uint256 pooledDelta = balanceOfPooled().sub(pooledBefore);
-            emit Debug("pooledDelta", pooledDelta);
             uint256 joinSlipped = amountIn > pooledDelta ? amountIn.sub(pooledDelta) : 0;
             uint256 maxLoss = amountIn.mul(maxSlippageIn).div(basisOne);
             require(joinSlipped <= maxLoss, "Exceeded maxSlippageIn!");
