@@ -35,6 +35,7 @@ contract Strategy is BaseStrategy {
     IBalancerPool internal stakeBpt;
     uint internal stakeTokenIndex;
     uint internal stakePercentage;
+    uint internal unstakePercentage;
 
     struct SwapSteps {
         bytes32[] poolIds;
@@ -120,13 +121,8 @@ contract Strategy is BaseStrategy {
         collectTradingFees();
         // claim beets
         claimRewards();
-
-        // calc amount beets to stake
-        uint256 toStake = balanceOfReward().mul(stakePercentage).div(basisOne);
-        // unstake all staked beets
-        unstake();
-        // stake pre-calc amount of beets for higher apy
-        stake(toStake);
+        // consolidate % to stake and unstake
+        consolidate();
         // sell the % not staking
         sellRewards();
 
@@ -199,13 +195,7 @@ contract Strategy is BaseStrategy {
         // withdraw all bpt out of masterchef
         masterChef.withdrawAndHarvest(masterChefPoolId, balanceOfBptInMasterChef(), address(this));
         // sell all bpt
-        uint256 bpts = balanceOfBpt();
-        if (bpts > 0) {
-            // exit entire position for single token. Could revert due to single exit limit enforced by balancer
-            bytes memory userData = abi.encode(IBalancerVault.ExitKind.EXACT_BPT_IN_FOR_ONE_TOKEN_OUT, bpts, tokenIndex);
-            IBalancerVault.ExitPoolRequest memory request = IBalancerVault.ExitPoolRequest(assets, minAmountsOut, userData, false);
-            balancerVault.exitPool(balancerPoolId, address(this), address(this), request);
-        }
+        exitPoolExactBpt(balanceOfBpt(), assets, tokenIndex, balancerPoolId, minAmountsOut);
 
         liquidated = balanceOfWant();
         _enforceSlippageOut(eta, liquidated);
@@ -329,6 +319,17 @@ contract Strategy is BaseStrategy {
         );
     }
 
+    // exit a pool given exact bpt amount
+    function exitPoolExactBpt(uint256 _bpts, IAsset[] memory _assets, uint256 _tokenIndex, bytes32 _balancerPoolId, uint256[] memory _minAmountsOut) internal {
+        if (_bpts > 0) {
+            // exit entire position for single token. Could revert due to single exit limit enforced by balancer
+            bytes memory userData = abi.encode(IBalancerVault.ExitKind.EXACT_BPT_IN_FOR_ONE_TOKEN_OUT, _bpts, _tokenIndex);
+            IBalancerVault.ExitPoolRequest memory request = IBalancerVault.ExitPoolRequest(_assets, _minAmountsOut, userData, false);
+            balancerVault.exitPool(_balancerPoolId, address(this), address(this), request);
+        }
+    }
+
+    // exit a pool given exact token amount
     function exitPoolExactToken(uint256 _amountTokenOut) internal {
         uint256[] memory amountsOut = new uint256[](numTokens);
         amountsOut[tokenIndex] = _amountTokenOut;
@@ -337,6 +338,7 @@ contract Strategy is BaseStrategy {
         balancerVault.exitPool(balancerPoolId, address(this), address(this), request);
     }
 
+    // join pool given exact token in
     function joinPool(uint256 _amountIn, IAsset[] memory _assets, uint256 _numTokens, uint256 _tokenIndex, bytes32 _poolId) internal returns (bool _joined){
         uint256[] memory maxAmountsIn = new uint256[](_numTokens);
         maxAmountsIn[_tokenIndex] = _amountIn;
@@ -366,6 +368,7 @@ contract Strategy is BaseStrategy {
         minDepositPeriod = _minDepositPeriod;
     }
 
+    // revert if slippage out exceeds our requirement
     function _enforceSlippageOut(uint _intended, uint _actual) internal view {
         // enforce that amount exited didn't slip beyond our tolerance
         // just in case there's positive slippage
@@ -374,16 +377,28 @@ contract Strategy is BaseStrategy {
         require(exitSlipped <= maxLoss, "Exceeded maxSlippageOut!");
     }
 
+    // swap step contains information on multihop sells
     function getSwapSteps() public view returns (SwapSteps memory){
         return swapSteps;
     }
 
+    // masterchef contract in case of masterchef migration
     function setMasterChef(address _masterChef) public onlyVaultManagers {
         bpt.approve(address(masterChef), 0);
         stakeBpt.approve(address(masterChef), 0);
         masterChef = IBeethovenxMasterChef(_masterChef);
         bpt.approve(address(masterChef), max);
         stakeBpt.approve(address(masterChef), max);
+    }
+
+    // calculate how much beets to unstake and stake
+    function consolidate() internal {
+        // pre-calc amount beets to stake
+        uint256 toStake = balanceOfReward().mul(stakePercentage).div(basisOne);
+        // unstake a % of staked beets
+        unstake();
+        // stake pre-calc amount of beets for higher apy
+        stake(toStake);
     }
 
     // stake all beets
@@ -398,28 +413,24 @@ contract Strategy is BaseStrategy {
         }
     }
 
-    // unstake all beets-lp from masterchef, single sided withdraw all beets from beets-lp
+    // unstake a % beets-lp from masterchef, single sided withdraw beets from beets-lp
     function unstake() internal {
-        uint256 bpts = balanceOfStakeBptInMasterChef();
+        uint256 bpts = balanceOfStakeBptInMasterChef().mul(unstakePercentage).div(basisOne);
         masterChef.withdrawAndHarvest(masterChefStakePoolId, bpts, address(this));
-
-        uint256[] memory minAmtsOut = new uint256[](stakeAssets.length);
-        if (bpts > 0) {
-            // exit all beets from beets pool. Don't care about slippage since it's rewards
-            bytes memory userData = abi.encode(IBalancerVault.ExitKind.EXACT_BPT_IN_FOR_ONE_TOKEN_OUT, bpts, stakeTokenIndex);
-            IBalancerVault.ExitPoolRequest memory request = IBalancerVault.ExitPoolRequest(stakeAssets, minAmtsOut, userData, false);
-            balancerVault.exitPool(stakeBpt.getPoolId(), address(this), address(this), request);
-        }
+        exitPoolExactBpt(bpts, stakeAssets, stakeTokenIndex, stakeBpt.getPoolId(), new uint256[](stakeAssets.length));
     }
 
+    // set params of where to stake the beets. Managers can change this to follow optimal yield
     function setStakeParams(
         uint256 _stakePercentageBips,
+        uint256 _unstakePercentageBips,
         IAsset[] memory _stakeAssets,
         address _stakePool,
         uint256 _stakeTokenIndex,
         uint256 _masterChefStakePoolId
     ) public onlyVaultManagers {
         stakePercentage = _stakePercentageBips;
+        unstakePercentage = _unstakePercentageBips;
         stakeAssets = _stakeAssets;
         masterChefStakePoolId = _masterChefStakePoolId;
         stakeBpt = IBalancerPool(_stakePool);

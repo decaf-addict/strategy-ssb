@@ -156,7 +156,7 @@ def strategy(strategist, keeper, vault, Strategy, gov, balancer_vault, pool, bee
     strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, masterChef, 50, 50, 100_000, 2 * 60 * 60, 10)
     strategy.setKeeper(keeper)
     strategy.whitelistReward(beets, swapStepsBeets, {'from': gov})
-    strategy.setStakeParams(8000, [usdc, beets], beetsUsdcPool, 1, 0, {'from': gov})
+    strategy.setStakeParams(8000, 7000, [usdc, beets], beetsUsdcPool, 1, 0, {'from': gov})
     vault.addStrategy(strategy, 10_000, 0, 2 ** 256 - 1, 1_000, {"from": gov})
     yield strategy
 
