@@ -71,7 +71,7 @@ contract Strategy is BaseStrategy {
         uint256 _minDepositPeriod,
         uint256 _masterChefPoolId)
     public BaseStrategy(_vault){
-        //        healthCheck = address(0xDDCea799fF1699e98EDF118e0629A974Df7DF012);
+        healthCheck = address(0xf13Cd6887C62B5beC145e30c38c4938c5E627fe0);
         bpt = IBalancerPool(_balancerPool);
         balancerPoolId = bpt.getPoolId();
         balancerVault = IBalancerVault(_balancerVault);
@@ -203,6 +203,7 @@ contract Strategy is BaseStrategy {
         return liquidated;
     }
 
+    // note that this withdraws into newStrategy.
     function prepareMigration(address _newStrategy) internal override {
         masterChef.withdrawAndHarvest(masterChefPoolId, balanceOfBptInMasterChef(), address(_newStrategy));
         masterChef.withdrawAndHarvest(masterChefStakePoolId, balanceOfStakeBptInMasterChef(), address(_newStrategy));
@@ -259,8 +260,12 @@ contract Strategy is BaseStrategy {
         uint256 total = estimatedTotalAssets();
         uint256 debt = vault.strategies(address(this)).totalDebt;
         if (total > debt) {
+            // withdraw all bpt out of masterchef
+            masterChef.withdrawAndHarvest(masterChefPoolId, balanceOfBptInMasterChef(), address(this));
             uint256 profit = total.sub(debt);
             exitPoolExactToken(profit);
+            // put remaining bpt back into masterchef
+            masterChef.deposit(masterChefPoolId, balanceOfBpt(), address(this));
         }
     }
 
@@ -384,6 +389,8 @@ contract Strategy is BaseStrategy {
 
     // masterchef contract in case of masterchef migration
     function setMasterChef(address _masterChef) public onlyVaultManagers {
+        masterChef.withdrawAndHarvest(masterChefPoolId, balanceOfBptInMasterChef(), address(this));
+        masterChef.withdrawAndHarvest(masterChefStakePoolId, balanceOfStakeBptInMasterChef(), address(this));
         bpt.approve(address(masterChef), 0);
         stakeBpt.approve(address(masterChef), 0);
         masterChef = IBeethovenxMasterChef(_masterChef);
