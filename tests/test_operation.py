@@ -27,18 +27,22 @@ def test_operation(
 
 
 def test_emergency_exit(
-        chain, accounts, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX
+        chain, accounts, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, beets, beets_whale, gov
 ):
     # Deposit to the vault
     token.approve(vault.address, amount, {"from": user})
     vault.deposit(amount, {"from": user})
+
     chain.sleep(1)
     strategy.harvest({"from": strategist})
     assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount
 
     # set emergency and exit
     strategy.setEmergencyExit()
+    chain.mine(5)
     chain.sleep(1)
+    # some slippage won't pass healthcheck
+    strategy.setDoHealthCheck(False, {'from': gov})
     strategy.harvest({"from": strategist})
     assert strategy.estimatedTotalAssets() < amount
 
@@ -206,4 +210,3 @@ def test_triggers(
 
     strategy.harvestTrigger(0)
     strategy.tendTrigger(0)
-
