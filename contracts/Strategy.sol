@@ -25,9 +25,10 @@ contract Strategy is BaseStrategy {
     IAsset[] internal assets;
     SwapSteps internal swapSteps;
     uint256[] internal minAmountsOut;
-    bytes32 public balancerPoolId;
-    uint8 public numTokens;
-    uint8 public tokenIndex;
+    bytes32 internal balancerPoolId;
+    uint8 internal numTokens;
+    uint8 internal tokenIndex;
+    bool internal abandonRewards;
 
     // masterchef
     IBeethovenxMasterChef internal masterChef;
@@ -85,7 +86,7 @@ contract Strategy is BaseStrategy {
             }
             assets[i] = IAsset(address(tokens[i]));
         }
-        require(tokenIndex != type(uint8).max, "token not supported in pool!");
+        require(tokenIndex != type(uint8).max, "token not in pool!");
 
         maxSlippageIn = _maxSlippageIn;
         maxSlippageOut = _maxSlippageOut;
@@ -94,7 +95,7 @@ contract Strategy is BaseStrategy {
         minDepositPeriod = _minDepositPeriod;
         masterChefPoolId = _masterChefPoolId;
         masterChef = IBeethovenxMasterChef(_masterChef);
-        require(masterChef.lpTokens(masterChefPoolId) == address(bpt), "Wrong MasterChef Pool!");
+        require(masterChef.lpTokens(masterChefPoolId) == address(bpt));
 
         want.safeApprove(address(balancerVault), max);
         bpt.approve(address(masterChef), max);
@@ -153,10 +154,9 @@ contract Strategy is BaseStrategy {
             uint256 pooledDelta = balanceOfPooled().sub(pooledBefore);
             uint256 joinSlipped = amountIn > pooledDelta ? amountIn.sub(pooledDelta) : 0;
             uint256 maxLoss = amountIn.mul(maxSlippageIn).div(basisOne);
-            require(joinSlipped <= maxLoss, "Exceeded maxSlippageIn!");
+            require(joinSlipped <= maxLoss, "Slipped in!");
             lastDepositTime = now;
         }
-
 
         // claim all beets
         claimRewards();
@@ -205,8 +205,7 @@ contract Strategy is BaseStrategy {
 
     // note that this withdraws into newStrategy.
     function prepareMigration(address _newStrategy) internal override {
-        masterChef.withdrawAndHarvest(masterChefPoolId, balanceOfBptInMasterChef(), address(_newStrategy));
-        masterChef.withdrawAndHarvest(masterChefStakePoolId, balanceOfStakeBptInMasterChef(), address(_newStrategy));
+        _withdrawFromMasterChef(_newStrategy);
         uint256 rewards = balanceOfReward();
         if (rewards > 0) {
             rewardToken.transfer(_newStrategy, rewards);
@@ -222,6 +221,28 @@ contract Strategy is BaseStrategy {
     }
 
     // HELPERS //
+
+    // Manually returns lps in masterchef to the strategy. Used in emergencies.
+    function emergencyWithdrawFromMasterChef() external onlyVaultManagers {
+        _withdrawFromMasterChef(address(this));
+    }
+
+    // AbandonRewards withdraws lp without rewards. Specify where to withdraw to
+    function _withdrawFromMasterChef(address _to) internal {
+        uint balanceOfBptInMasterChef = balanceOfBptInMasterChef();
+        if (balanceOfBptInMasterChef > 0) {
+            abandonRewards
+            ? masterChef.emergencyWithdraw(masterChefPoolId, address(_to))
+            : masterChef.withdrawAndHarvest(masterChefPoolId, balanceOfBptInMasterChef, address(_to));
+        }
+
+        uint balanceOfStakeBptInMasterChef = balanceOfStakeBptInMasterChef();
+        if (balanceOfStakeBptInMasterChef > 0) {
+            abandonRewards
+            ? masterChef.emergencyWithdraw(masterChefStakePoolId, address(_to))
+            : masterChef.withdrawAndHarvest(masterChefStakePoolId, balanceOfStakeBptInMasterChef, address(_to));
+        }
+    }
 
     // claim all beets rewards from masterchef
     function claimRewards() internal {
@@ -363,10 +384,10 @@ contract Strategy is BaseStrategy {
     }
 
     function setParams(uint256 _maxSlippageIn, uint256 _maxSlippageOut, uint256 _maxSingleDeposit, uint256 _minDepositPeriod) public onlyVaultManagers {
-        require(_maxSlippageIn <= basisOne, "maxSlippageIn too high");
+        require(_maxSlippageIn <= basisOne);
         maxSlippageIn = _maxSlippageIn;
 
-        require(_maxSlippageOut <= basisOne, "maxSlippageOut too high");
+        require(_maxSlippageOut <= basisOne);
         maxSlippageOut = _maxSlippageOut;
 
         maxSingleDeposit = _maxSingleDeposit;
@@ -379,7 +400,7 @@ contract Strategy is BaseStrategy {
         // just in case there's positive slippage
         uint256 exitSlipped = _intended > _actual ? _intended.sub(_actual) : 0;
         uint256 maxLoss = _intended.mul(maxSlippageOut).div(basisOne);
-        require(exitSlipped <= maxLoss, "Exceeded maxSlippageOut!");
+        require(exitSlipped <= maxLoss, "Slipped Out!");
     }
 
     // swap step contains information on multihop sells
@@ -388,9 +409,9 @@ contract Strategy is BaseStrategy {
     }
 
     // masterchef contract in case of masterchef migration
-    function setMasterChef(address _masterChef) public onlyVaultManagers {
-        masterChef.withdrawAndHarvest(masterChefPoolId, balanceOfBptInMasterChef(), address(this));
-        masterChef.withdrawAndHarvest(masterChefStakePoolId, balanceOfStakeBptInMasterChef(), address(this));
+    function setMasterChef(address _masterChef) public onlyGovernance {
+        _withdrawFromMasterChef(address(this));
+
         bpt.approve(address(masterChef), 0);
         stakeBpt.approve(address(masterChef), 0);
         masterChef = IBeethovenxMasterChef(_masterChef);
@@ -443,6 +464,11 @@ contract Strategy is BaseStrategy {
         stakeBpt = IBalancerPool(_stakePool);
         stakeBpt.approve(address(masterChef), max);
         stakeTokenIndex = _stakeTokenIndex;
+    }
+
+    // toggle for whether to abandon rewards or not on emergency withdraws from masterchef
+    function setAbandonRewards(bool abandon) external onlyVaultManagers {
+        abandonRewards = abandon;
     }
 
     receive() external payable {}
