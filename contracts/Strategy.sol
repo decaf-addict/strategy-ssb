@@ -33,7 +33,7 @@ contract Strategy is BaseStrategy {
     // masterchef
     IBeethovenxMasterChef internal masterChef;
     IAsset[] internal stakeAssets;
-    IBalancerPool internal stakeBpt;
+    IBalancerPool public stakeBpt;
     uint internal stakeTokenIndex;
     uint internal stakePercentage;
     uint internal unstakePercentage;
@@ -308,10 +308,6 @@ contract Strategy is BaseStrategy {
 
     function balanceOfReward() public view returns (uint256 _amount){
         return rewardToken.balanceOf(address(this));
-    }
-
-    function balanceOfPendingReward() public view returns (uint256 _amount){
-        return masterChef.pendingBeets(masterChefStakePoolId, address(this)).add(masterChef.pendingBeets(masterChefPoolId, address(this)));
     }
 
     function balanceOfPooled() public view returns (uint256 _amount){

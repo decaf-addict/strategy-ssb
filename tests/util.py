@@ -14,5 +14,4 @@ def stateOfStrat(msg, strategy, token):
     print(f'balanceOfBptInMasterChef: {strategy.balanceOfBptInMasterChef() / wantDec}')
     print(f'balanceOfStakeBptInMasterChef : {strategy.balanceOfStakeBptInMasterChef() / wantDec}')
     print(f'Balance of BEETS: {strategy.balanceOfReward()/ wantDec}')
-    print(f'Balance of pending BEETS: {strategy.balanceOfPendingReward()/ wantDec}')
     print(f'Estimated Total Assets: {strategy.estimatedTotalAssets() / wantDec}')

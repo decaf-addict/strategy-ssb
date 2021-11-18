@@ -47,6 +47,34 @@ def test_emergency_exit(
     assert strategy.estimatedTotalAssets() < amount
 
 
+def test_manual_exit(
+        chain, accounts, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, beets, beets_whale, gov
+):
+    # Deposit to the vault
+    token.approve(vault.address, amount, {"from": user})
+    vault.deposit(amount, {"from": user})
+
+    chain.sleep(1)
+    strategy.harvest({"from": strategist})
+    assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount
+
+    chain.mine(5)
+    chain.sleep(1)
+    # some slippage won't pass healthcheck
+    strategy.harvest({"from": strategist})
+
+    stakeBpt = Contract(strategy.stakeBpt())
+    assert strategy.balanceOfBpt() == 0
+    assert strategy.balanceOfBptInMasterChef() > 0
+    assert stakeBpt.balanceOf(strategy) == 0
+    assert strategy.balanceOfStakeBptInMasterChef() > 0
+    strategy.emergencyWithdrawFromMasterChef({"from": gov})
+    assert strategy.balanceOfBpt() > 0
+    assert strategy.balanceOfBptInMasterChef() == 0
+    assert stakeBpt.balanceOf(strategy) > 0
+    assert strategy.balanceOfStakeBptInMasterChef() == 0
+
+
 def test_profitable_harvest(
         chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, beets, beets_whale, management
 ):

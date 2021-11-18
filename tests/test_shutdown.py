@@ -29,7 +29,7 @@ def test_vault_shutdown_can_withdraw(
 
 
 def test_basic_shutdown(
-        chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX
+        chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, gov
 ):
     # Deposit to the vault
     token.approve(vault.address, amount, {"from": user})
@@ -53,6 +53,7 @@ def test_basic_shutdown(
     ## Set emergency
     strategy.setEmergencyExit({"from": strategist})
 
+    strategy.setDoHealthCheck(False, {'from': gov})
     strategy.harvest()  ## Remove funds from strategy
 
     assert token.balanceOf(strategy) == 0
