@@ -444,17 +444,21 @@ contract Strategy is BaseStrategy {
         exitPoolExactBpt(bpts, stakeAssets, stakeTokenIndex, stakeBpt.getPoolId(), new uint256[](stakeAssets.length));
     }
 
-    // set params of where to stake the beets. Managers can change this to follow optimal yield
+    // set params for staking %
     function setStakeParams(
         uint256 _stakePercentageBips,
-        uint256 _unstakePercentageBips,
+        uint256 _unstakePercentageBips) public onlyVaultManagers {
+        stakePercentage = _stakePercentageBips;
+        unstakePercentage = _unstakePercentageBips;
+    }
+
+    // set info of where to stake the beets. Managers can change this to follow optimal yield
+    function setStakeInfo(
         IAsset[] memory _stakeAssets,
         address _stakePool,
         uint256 _stakeTokenIndex,
         uint256 _masterChefStakePoolId
     ) public onlyVaultManagers {
-        stakePercentage = _stakePercentageBips;
-        unstakePercentage = _unstakePercentageBips;
         stakeAssets = _stakeAssets;
         masterChefStakePoolId = _masterChefStakePoolId;
         stakeBpt = IBalancerPool(_stakePool);
