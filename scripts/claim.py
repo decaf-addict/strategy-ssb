@@ -28,4 +28,11 @@ def main():
                       0,
                       token_data["hex_proof"])]
             merkleOrchard.claimDistributions(token_data["address"], claim, [reward[1]], {'from': dev})
-            print(f'{token_data["address"]} claimed {int(token_data["claim_amount"]) / 1e18} {reward[3]} ')
+            name = ""
+            claimee = token_data["address"]
+            try:
+                name = Contract(claimee).name()
+            except:
+                if claimee == "0x16388463d60FFE0661Cf7F1f31a7D658aC790ff7":
+                    name = "🧠 yBrain"
+            print(f'{claimee} {name} claimed {int(token_data["claim_amount"]) / 1e18} {reward[3]} \n')
