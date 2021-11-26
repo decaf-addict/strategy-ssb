@@ -105,7 +105,7 @@ contract Strategy is BaseStrategy {
 
     function name() external view override returns (string memory) {
         // Add your own name here, suggestion e.g. "StrategyCreamYFI"
-        return string(abi.encodePacked("SingleSidedBalancer ", bpt.symbol(), "Pool ", ERC20(address(want)).symbol()));
+        return string(abi.encodePacked("SingleSidedBeethoven ", bpt.symbol(), "Pool ", ERC20(address(want)).symbol()));
     }
 
     function estimatedTotalAssets() public view override returns (uint256) {
