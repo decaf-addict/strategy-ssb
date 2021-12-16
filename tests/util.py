@@ -13,4 +13,4 @@ def stateOfStrat(msg, strategy, token):
     print(f'Balance of Bpt: {strategy.balanceOfBpt() / wantDec}')
     for i in range(strategy.numRewards()):
         print(f'Balance of {Contract(strategy.rewardTokens(i)).symbol()}: {Contract(strategy.rewardTokens(i)).balanceOf(strategy.address)}')
-    print(f'Estimated Total Assets: {strategy.estimatedTotalAssets() / wantDec}')
+    print(f'Estimated Total Assets: {strategy.estimateTotalAssets().return_value / wantDec}')
