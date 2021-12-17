@@ -18,10 +18,8 @@ interface IName {
 
 contract Strategy is BaseStrategy {
     using SafeERC20 for IERC20;
-    using Address for address;
     using SafeMath for uint256;
 
-    IERC20 internal constant weth = IERC20(address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2));
     IBalancerVault public balancerVault;
     IBalancerPool public bpt;
     IERC20[] public rewardTokens;
@@ -196,7 +194,7 @@ contract Strategy is BaseStrategy {
         uint256 amountIn = Math.min(maxSingleDeposit, balanceOfWant());
         maxAmountsIn[tokenIndex] = amountIn;
 
-        if (maxAmountsIn[tokenIndex] > 0) {
+        if (amountIn > 0) {
             uint256[] memory amountsIn = new uint256[](numTokens);
             amountsIn[tokenIndex] = amountIn;
             bytes memory userData = abi.encode(IBalancerVault.JoinKind.EXACT_TOKENS_IN_FOR_BPT_OUT, amountsIn, 0);
@@ -269,11 +267,11 @@ contract Strategy is BaseStrategy {
 
     function harvestTrigger(uint256 callCostInWei) public view override returns (bool){
         bool hasRewards;
+        uint decWant = ERC20(address(want)).decimals();
         for (uint8 i = 0; i < rewardTokens.length; i++) {
             ERC20 rewardToken = ERC20(address(rewardTokens[i]));
 
             uint decReward = rewardToken.decimals();
-            uint decWant = ERC20(address(want)).decimals();
             if (rewardToken.balanceOf(address(this)) > 10 ** (decReward > decWant ? decReward.sub(decWant) : 0)) {
                 hasRewards = true;
                 break;
