@@ -168,6 +168,20 @@ def balancer_vault():
 
 
 @pytest.fixture
+def boosted_pool():
+    yield Contract("0x7B50775383d3D6f0215A8F290f2C9e2eEBBEceb2")
+
+
+@pytest.fixture
+def rebalancer():
+    yield Contract("0x1Ed9C8BD3DccB85f704A5287444B552F9d5E1a26")
+
+@pytest.fixture
+def lender():
+    yield Contract("0x1EB4CF3A948E7D72A198fe073cCb8C7a948cD853")
+
+
+@pytest.fixture
 def pool():
     # 0x06Df3b2bbB68adc8B0e302443692037ED9f91b42 stable pool
     # 0x32296969Ef14EB0c6d29669C550D4a0449130230 metastable eth pool
@@ -185,10 +199,12 @@ def wethTokenPoolId():
     id = 0x0b09dea16768f0799065c475be02919503cb2a3500020000000000000000001a  # weth-dai
     yield id
 
+
 @pytest.fixture
 def wethToken2PoolId():
     id = 0x96646936b91d6b9d7d0c47c496afbf3d6ec7b6f8000200000000000000000019  # weth-usdc
     yield id
+
 
 @pytest.fixture
 def ldoWethPoolId():
@@ -200,13 +216,16 @@ def ldoWethPoolId():
 def swapStepsBal(balWethPoolId, wethTokenPoolId, bal, weth, token):
     yield ([balWethPoolId, wethTokenPoolId], [bal, weth, token])
 
+
 @pytest.fixture
 def swapStepsLdo(ldoWethPoolId, wethTokenPoolId, ldo, weth, token):
     yield ([ldoWethPoolId, wethTokenPoolId], [ldo, weth, token])
 
+
 @pytest.fixture
 def swapStepsBal2(balWethPoolId, wethToken2PoolId, bal, weth, token2):
     yield ([balWethPoolId, wethToken2PoolId], [bal, weth, token2])
+
 
 @pytest.fixture
 def swapStepsLdo2(ldoWethPoolId, wethToken2PoolId, ldo, weth, token2):
@@ -223,6 +242,11 @@ def strategy(strategist, keeper, vault, Strategy, gov, balancer_vault, pool, bal
     vault.addStrategy(strategy, 10_000, 0, 2 ** 256 - 1, 1_000, {"from": gov})
     yield strategy
 
+
+@pytest.fixture
+def backrunner(strategist, BoostedBackrunner, balancer_vault, boosted_pool, rebalancer, lender):
+    backrunner = strategist.deploy(BoostedBackrunner, balancer_vault, boosted_pool, rebalancer, lender)
+    yield backrunner
 
 @pytest.fixture(scope="session")
 def RELATIVE_APPROX():

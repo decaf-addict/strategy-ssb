@@ -92,8 +92,8 @@ interface IBalancerVault {
     struct SingleSwap {
         bytes32 poolId;
         SwapKind kind;
-        IAsset assetIn;
-        IAsset assetOut;
+        address assetIn;
+        address assetOut;
         uint256 amount;
         bytes userData;
     }
@@ -198,6 +198,13 @@ interface IBalancerVault {
         int256[] memory limits,
         uint256 deadline
     ) external payable returns (int256[] memory);
+
+    function flashLoan(
+        address recipient,
+        IERC20[] memory tokens,
+        uint256[] memory amounts,
+        bytes memory userData
+    ) external;
 }
 
 interface IAsset {
@@ -232,4 +239,56 @@ interface IBalancerVaultHelper {
         address recipient,
         IBalancerVault.ExitPoolRequest memory request
     ) external view returns (uint256 bptIn, uint256[] memory amountsOut);
+}
+
+interface IFlashLoanRecipient {
+    /**
+     * @dev When `flashLoan` is called on the Vault, it invokes the `receiveFlashLoan` hook on the recipient.
+     *
+     * At the time of the call, the Vault will have transferred `amounts` for `tokens` to the recipient. Before this
+     * call returns, the recipient must have transferred `amounts` plus `feeAmounts` for each token back to the
+     * Vault, or else the entire flash loan will revert.
+     *
+     * `userData` is the same value passed in the `IVault.flashLoan` call.
+     */
+    function receiveFlashLoan(
+        IERC20[] memory tokens,
+        uint256[] memory amounts,
+        uint256[] memory feeAmounts,
+        bytes memory userData
+    ) external;
+}
+
+interface ILinearPool {
+    function getPoolId() external view returns (bytes32 poolId);
+
+    function getMainToken() external view returns (address);
+
+    function getWrappedToken() external view returns (address);
+
+    function getBptIndex() external view returns (uint256);
+
+    function getMainIndex() external view returns (uint256);
+
+    function getWrappedIndex() external view returns (uint256);
+
+    // Price rates
+
+    /**
+     * @dev For a Linear Pool, the rate represents the appreciation of BPT with respect to the underlying tokens. This
+     * rate increases slowly as the wrapped token appreciates in value.
+     */
+    function getRate() external view returns (uint256);
+
+    function getWrappedTokenRate() external view returns (uint256);
+
+    function getTargets() external view returns (uint256 lowerTarget, uint256 upperTarget);
+
+    /**
+     * @dev Returns the number of tokens in circulation.
+     *
+     * In other pools, this would be the same as `totalSupply`, but since this pool pre-mints all BPT, `totalSupply`
+     * remains constant, whereas `virtualSupply` increases as users join the pool and decreases as they exit it.
+     */
+    function getVirtualSupply() external view returns (uint256);
 }
