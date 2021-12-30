@@ -260,6 +260,7 @@ interface IFlashLoanRecipient {
 }
 
 interface ILinearPool {
+    function getVault() external view returns (address);
     function getPoolId() external view returns (bytes32 poolId);
 
     function getMainToken() external view returns (address);

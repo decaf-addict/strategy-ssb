@@ -176,6 +176,7 @@ def boosted_pool():
 def rebalancer():
     yield Contract("0x1Ed9C8BD3DccB85f704A5287444B552F9d5E1a26")
 
+
 @pytest.fixture
 def lender():
     yield Contract("0x1EB4CF3A948E7D72A198fe073cCb8C7a948cD853")
@@ -244,9 +245,21 @@ def strategy(strategist, keeper, vault, Strategy, gov, balancer_vault, pool, bal
 
 
 @pytest.fixture
-def backrunner(strategist, BoostedBackrunner, balancer_vault, boosted_pool, rebalancer, lender):
-    backrunner = strategist.deploy(BoostedBackrunner, balancer_vault, boosted_pool, rebalancer, lender)
-    yield backrunner
+def liquidityProvider():
+    yield Contract("0x4F868C1aa37fCf307ab38D215382e88FCA6275E2")
+
+@pytest.fixture
+def arber(strategist, Arbitrager):
+    arber = strategist.deploy(Arbitrager)
+    yield arber
+
+
+@pytest.fixture
+def loaner(strategist, KeeperDaoFlashloaner, liquidityProvider, arber):
+    loaner = strategist.deploy(KeeperDaoFlashloaner, liquidityProvider, arber)
+    arber.setFlashloaner(loaner, {'from': strategist})
+    yield loaner
+
 
 @pytest.fixture(scope="session")
 def RELATIVE_APPROX():
