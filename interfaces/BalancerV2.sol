@@ -193,7 +193,7 @@ interface IBalancerVault {
     function batchSwap(
         SwapKind kind,
         BatchSwapStep[] memory swaps,
-        IAsset[] memory assets,
+        address[] memory assets,
         FundManagement memory funds,
         int256[] memory limits,
         uint256 deadline
@@ -261,7 +261,7 @@ interface IFlashLoanRecipient {
 
 interface ILinearPool {
     function getVault() external view returns (address);
-    
+
     function getPoolId() external view returns (bytes32 poolId);
 
     function getMainToken() external view returns (address);

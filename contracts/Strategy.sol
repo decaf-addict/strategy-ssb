@@ -16,6 +16,8 @@ interface IName {
     function name() external view returns (string memory);
 }
 
+/// @dev This strategy is implemented specifically for the balancer boosted pools. A boosted pool is a metapool with each of its pool
+/// tokens being other bpts.
 contract Strategy is BaseStrategy {
     using SafeERC20 for IERC20;
     using Address for address;
@@ -23,11 +25,18 @@ contract Strategy is BaseStrategy {
 
     IERC20 internal constant weth = IERC20(address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2));
     IBalancerVault public balancerVault;
+
+    /// @dev boosted pool token. Primary pool that the linear pool integrates into. For boosted pools, bpt is preminted. Instead of joining/exiting
+    /// pool with want, we have to swap for it.
     IBalancerPool public bpt;
+
+    // @dev linear pool token. Primary linear pool that the strategy interacts with to wrap/unwrap want token
+    ILinearPool public lpt;
     IERC20[] public rewardTokens;
     IAsset[] internal assets;
     SwapSteps[] internal swapSteps;
     uint256[] internal minAmountsOut;
+
     bytes32 public balancerPoolId;
     uint8 public numTokens;
     uint8 public tokenIndex;
@@ -38,22 +47,16 @@ contract Strategy is BaseStrategy {
     }
 
     uint256 internal constant max = type(uint256).max;
-
-    //1	    0.01%
-    //5	    0.05%
-    //10	0.1%
-    //50	0.5%
-    //100	1%
-    //1000	10%
-    //10000	100%
-    uint256 public maxSlippageIn; // bips
-    uint256 public maxSlippageOut; // bips
+    uint256 public maxSlippageIn;
+    uint256 public maxSlippageOut;
     uint256 public maxSingleDeposit;
-    uint256 public minDepositPeriod; // seconds
+    uint256 public minDepositPeriod;
     uint256 public lastDepositTime;
     uint256 internal constant basisOne = 10000;
     bool internal isOriginal = true;
     uint internal etaCached;
+
+    IBalancerVault.FundManagement funds = IBalancerVault.FundManagement(address(this), false, address(this), false);
 
     constructor(
         address _vault,
@@ -93,26 +96,26 @@ contract Strategy is BaseStrategy {
         uint256 _minDepositPeriod)
     internal {
         require(address(bpt) == address(0x0), "Strategy already initialized!");
-        healthCheck = address(0xDDCea799fF1699e98EDF118e0629A974Df7DF012); // health.ychad.eth
+        healthCheck = address(0xDDCea799fF1699e98EDF118e0629A974Df7DF012);
+        // health.ychad.eth
         bpt = IBalancerPool(_balancerPool);
         balancerPoolId = bpt.getPoolId();
         balancerVault = IBalancerVault(_balancerVault);
         (IERC20[] memory tokens,,) = balancerVault.getPoolTokens(balancerPoolId);
         numTokens = uint8(tokens.length);
-        assets = new IAsset[](numTokens);
         tokenIndex = type(uint8).max;
         for (uint8 i = 0; i < numTokens; i++) {
-            if (tokens[i] == want) {
+            ILinearPool _lPool = ILinearPool(tokens[i]);
+            if (_lPool.getMainToken() == address(want)) {
                 tokenIndex = i;
+                lpt = _lPool;
             }
-            assets[i] = IAsset(address(tokens[i]));
         }
         require(tokenIndex != type(uint8).max, "token not supported in pool!");
 
         maxSlippageIn = _maxSlippageIn;
         maxSlippageOut = _maxSlippageOut;
         maxSingleDeposit = _maxSingleDeposit.mul(10 ** uint256(ERC20(address(want)).decimals()));
-        minAmountsOut = new uint256[](numTokens);
         minDepositPeriod = _minDepositPeriod;
 
         want.safeApprove(address(balancerVault), max);
@@ -199,20 +202,14 @@ contract Strategy is BaseStrategy {
 
     function adjustPosition(uint256 _debtOutstanding) internal override {
         if (now - lastDepositTime < minDepositPeriod) {
-            return;
+            revert();
         }
 
         uint256 pooledBefore = balanceOfPooled();
-        uint256[] memory maxAmountsIn = new uint256[](numTokens);
         uint256 amountIn = Math.min(maxSingleDeposit, balanceOfWant());
-        maxAmountsIn[tokenIndex] = amountIn;
 
-        if (maxAmountsIn[tokenIndex] > 0) {
-            uint256[] memory amountsIn = new uint256[](numTokens);
-            amountsIn[tokenIndex] = amountIn;
-            bytes memory userData = abi.encode(IBalancerVault.JoinKind.EXACT_TOKENS_IN_FOR_BPT_OUT, amountsIn, 0);
-            IBalancerVault.JoinPoolRequest memory request = IBalancerVault.JoinPoolRequest(assets, maxAmountsIn, userData, false);
-            balancerVault.joinPool(balancerPoolId, address(this), address(this), request);
+        if (amountIn > 0) {
+            _enterPool(amountIn);
 
             uint256 pooledDelta = balanceOfPooled().sub(pooledBefore);
             uint256 joinSlipped = amountIn > pooledDelta ? amountIn.sub(pooledDelta) : 0;
@@ -233,7 +230,7 @@ contract Strategy is BaseStrategy {
         if (_amountNeeded > looseAmount) {
             uint256 toExitAmount = _amountNeeded.sub(looseAmount);
 
-            _sellBptForExactToken(toExitAmount);
+            _exitPool(toExitAmount);
 
             _liquidatedAmount = Math.min(balanceOfWant(), _amountNeeded);
             _loss = _amountNeeded.sub(_liquidatedAmount);
@@ -248,10 +245,7 @@ contract Strategy is BaseStrategy {
         uint eta = estimateTotalAssets();
         uint256 bpts = balanceOfBpt();
         if (bpts > 0) {
-            // exit entire position for single token. Could revert due to single exit limit enforced by balancer
-            bytes memory userData = abi.encode(IBalancerVault.ExitKind.EXACT_BPT_IN_FOR_ONE_TOKEN_OUT, bpts, tokenIndex);
-            IBalancerVault.ExitPoolRequest memory request = IBalancerVault.ExitPoolRequest(assets, minAmountsOut, userData, false);
-            balancerVault.exitPool(balancerPoolId, address(this), address(this), request);
+            _exitPoolAll();
         }
 
         liquidated = balanceOfWant();
@@ -328,7 +322,7 @@ contract Strategy is BaseStrategy {
 
     function collectTradingFees(uint _profit) internal {
         if (_profit > 0) {
-            _sellBptForExactToken(_profit);
+            _exitPool(_profit);
         }
     }
 
@@ -393,12 +387,76 @@ contract Strategy is BaseStrategy {
         );
     }
 
-    function _sellBptForExactToken(uint256 _amountTokenOut) internal {
-        uint256[] memory amountsOut = new uint256[](numTokens);
-        amountsOut[tokenIndex] = _amountTokenOut;
-        bytes memory userData = abi.encode(IBalancerVault.ExitKind.BPT_IN_FOR_EXACT_TOKENS_OUT, amountsOut, balanceOfBpt());
-        IBalancerVault.ExitPoolRequest memory request = IBalancerVault.ExitPoolRequest(assets, minAmountsOut, userData, false);
-        balancerVault.exitPool(balancerPoolId, address(this), address(this), request);
+    // request exact out
+    function _exitPoolAll() internal {
+        uint bpts = balanceOfBpt();
+        address[] memory assets = new address[](3);
+        assets[0] = address(bpt);
+        assets[1] = address(lpt);
+        assets[2] = address(want);
+
+        IBalancerVault.BatchSwapStep[] steps = new IBalancerVault.BatchSwapStep[](2);
+        steps[0] = IBalancerVault.BatchSwapStep(bpt.getPoolId(), 0, 1, bpts, abi.encode(0));
+        steps[1] = IBalancerVault.BatchSwapStep(lpt.getPoolId(), 1, 2, 0, abi.encode(0));
+
+        int[] limits = new int[](3);
+        limits[0] = bpts;
+
+        balancerVault.batchSwap(
+            IBalancerVault.SwapKind.GIVEN_IN,
+            steps,
+            assets,
+            funds,
+            limits,
+            max
+        );
+    }
+    // request exact out
+    function _exitPool(uint256 _amountTokenOut) internal {
+        address[] memory assets = new address[](3);
+        assets[0] = address(bpt);
+        assets[1] = address(lpt);
+        assets[2] = address(want);
+
+        IBalancerVault.BatchSwapStep[] steps = new IBalancerVault.BatchSwapStep[](2);
+        steps[0] = IBalancerVault.BatchSwapStep(bpt.getPoolId(), 0, 1, 0, abi.encode(0));
+        steps[1] = IBalancerVault.BatchSwapStep(lpt.getPoolId(), 1, 2, _amountTokenOut, abi.encode(0));
+
+        int[] limits = new int[](3);
+        limits[0] = balanceOfBpt();
+
+        balancerVault.batchSwap(
+            IBalancerVault.SwapKind.GIVEN_OUT,
+            steps,
+            assets,
+            funds,
+            limits,
+            max
+        );
+    }
+
+    // swap want for lpt, lpt for bpt
+    function _enterPool(uint _amountTokenIn) internal {
+        address[] memory assets = new address[](3);
+        assets[0] = address(want);
+        assets[1] = address(lpt);
+        assets[2] = address(bpt);
+
+        IBalancerVault.BatchSwapStep[] steps = new IBalancerVault.BatchSwapStep[](2);
+        steps[0] = IBalancerVault.BatchSwapStep(lpt.getPoolId(), 0, 1, _amountTokenIn, abi.encode(0));
+        steps[1] = IBalancerVault.BatchSwapStep(bpt.getPoolId(), 1, 2, 0, abi.encode(0));
+
+        int[] limits = new int[](3);
+        limits[0] = _amountTokenIn;
+
+        balancerVault.batchSwap(
+            IBalancerVault.SwapKind.GIVEN_IN,
+            steps,
+            assets,
+            funds,
+            limits,
+            max
+        );
     }
 
     // for partnership rewards like Lido or airdrops
@@ -422,6 +480,10 @@ contract Strategy is BaseStrategy {
         return rewardTokens.length;
     }
 
+    /// @param _maxSlippageIn in bips
+    /// @param _maxSlippageOut in bips
+    /// @param _maxSingleDeposit decimal agnostic (enter 100 for 100 tokens)
+    /// @param _minDepositPeriod in seconds
     function setParams(uint256 _maxSlippageIn, uint256 _maxSlippageOut, uint256 _maxSingleDeposit, uint256 _minDepositPeriod) public onlyVaultManagers {
         require(_maxSlippageIn <= basisOne, "maxSlippageIn too high");
         maxSlippageIn = _maxSlippageIn;
@@ -429,13 +491,13 @@ contract Strategy is BaseStrategy {
         require(_maxSlippageOut <= basisOne, "maxSlippageOut too high");
         maxSlippageOut = _maxSlippageOut;
 
-        maxSingleDeposit = _maxSingleDeposit;
+        maxSingleDeposit = _maxSingleDeposit.mul(10 ** uint256(ERC20(address(want)).decimals()));
         minDepositPeriod = _minDepositPeriod;
     }
 
+    // enforce that amount exited didn't slip beyond our tolerance
+    // just in case there's positive slippage
     function _enforceSlippageOut(uint _intended, uint _actual) internal {
-        // enforce that amount exited didn't slip beyond our tolerance
-        // just in case there's positive slippage
         uint256 exitSlipped = _intended > _actual ? _intended.sub(_actual) : 0;
         uint256 maxLoss = _intended.mul(maxSlippageOut).div(basisOne);
         require(exitSlipped <= maxLoss, "Exceeded maxSlippageOut!");
