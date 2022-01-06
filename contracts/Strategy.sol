@@ -54,7 +54,6 @@ contract Strategy is BaseStrategy {
     uint256 public minDepositPeriod;
     uint256 public lastDepositTime;
     uint256 internal constant basisOne = 10000;
-    bool internal isOriginal = true;
     uint internal etaCached;
 
     IBalancerVault.FundManagement funds = IBalancerVault.FundManagement(address(this), false, address(this), false);
@@ -98,7 +97,6 @@ contract Strategy is BaseStrategy {
     internal {
         require(address(bpt) == address(0x0), "Strategy already initialized!");
         healthCheck = address(0xDDCea799fF1699e98EDF118e0629A974Df7DF012);
-        // health.ychad.eth
         bpt = IStablePhantomPool(_balancerPool);
         boostedPoolId = bpt.getPoolId();
         balancerVault = IBalancerVault(_balancerVault);
@@ -107,11 +105,11 @@ contract Strategy is BaseStrategy {
         tokenIndex = type(uint8).max;
         for (uint8 i = 0; i < numTokens; i++) {
             ILinearPool _lpt = ILinearPool(address(tokens[i]));
-            if (_lpt.getMainToken() == address(want)) {
+            if (address(_lpt) == address(bpt)) {
+                bptIndex = i;
+            } else if (_lpt.getMainToken() == address(want)) {
                 tokenIndex = i;
                 lpt = _lpt;
-            } else if (address(_lpt) == address(bpt)) {
-                bptIndex = i;
             }
         }
         require(tokenIndex != type(uint8).max, "token not supported in pool!");
@@ -123,41 +121,6 @@ contract Strategy is BaseStrategy {
 
         want.safeApprove(address(balancerVault), max);
     }
-
-    event Cloned(address indexed clone);
-
-    function clone(
-        address _vault,
-        address _strategist,
-        address _rewards,
-        address _keeper,
-        address _balancerVault,
-        address _balancerPool,
-        uint256 _maxSlippageIn,
-        uint256 _maxSlippageOut,
-        uint256 _maxSingleDeposit,
-        uint256 _minDepositPeriod
-    ) external returns (address payable newStrategy) {
-        require(isOriginal);
-
-        bytes20 addressBytes = bytes20(address(this));
-
-        assembly {
-        // EIP-1167 bytecode
-            let clone_code := mload(0x40)
-            mstore(clone_code, 0x3d602d80600a3d3981f3363d3d373d3d3d363d73000000000000000000000000)
-            mstore(add(clone_code, 0x14), addressBytes)
-            mstore(add(clone_code, 0x28), 0x5af43d82803e903d91602b57fd5bf30000000000000000000000000000000000)
-            newStrategy := create(0, clone_code, 0x37)
-        }
-
-        Strategy(newStrategy).initialize(
-            _vault, _strategist, _rewards, _keeper, _balancerVault, _balancerPool, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod
-        );
-
-        emit Cloned(newStrategy);
-    }
-
 
     // ******** OVERRIDE THESE METHODS FROM BASE CONTRACT ************
 
