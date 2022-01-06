@@ -28,7 +28,7 @@ contract Strategy is BaseStrategy {
 
     /// @dev boosted pool token. Primary pool that the linear pool integrates into. For boosted pools, bpt is preminted. Instead of joining/exiting
     /// pool with want, we have to swap for it.
-    IBalancerPool public bpt;
+    IStablePhantomPool public bpt;
 
     // @dev linear pool token. Primary linear pool that the strategy interacts with to wrap/unwrap want token
     ILinearPool public lpt;
@@ -37,9 +37,10 @@ contract Strategy is BaseStrategy {
     SwapSteps[] internal swapSteps;
     uint256[] internal minAmountsOut;
 
-    bytes32 public balancerPoolId;
+    bytes32 public boostedPoolId;
     uint8 public numTokens;
     uint8 public tokenIndex;
+    uint8 public bptIndex;
 
     struct SwapSteps {
         bytes32[] poolIds;
@@ -98,10 +99,10 @@ contract Strategy is BaseStrategy {
         require(address(bpt) == address(0x0), "Strategy already initialized!");
         healthCheck = address(0xDDCea799fF1699e98EDF118e0629A974Df7DF012);
         // health.ychad.eth
-        bpt = IBalancerPool(_balancerPool);
-        balancerPoolId = bpt.getPoolId();
+        bpt = IStablePhantomPool(_balancerPool);
+        boostedPoolId = bpt.getPoolId();
         balancerVault = IBalancerVault(_balancerVault);
-        (IERC20[] memory tokens,,) = balancerVault.getPoolTokens(balancerPoolId);
+        (IERC20[] memory tokens,,) = balancerVault.getPoolTokens(boostedPoolId);
         numTokens = uint8(tokens.length);
         tokenIndex = type(uint8).max;
         for (uint8 i = 0; i < numTokens; i++) {
@@ -109,6 +110,8 @@ contract Strategy is BaseStrategy {
             if (_lPool.getMainToken() == address(want)) {
                 tokenIndex = i;
                 lpt = _lPool;
+            } else if (_lPool == bpt) {
+                bptIndex = i;
             }
         }
         require(tokenIndex != type(uint8).max, "token not supported in pool!");
@@ -342,49 +345,25 @@ contract Strategy is BaseStrategy {
         uint256 totalWantPooled;
         uint bpts = balanceOfBpt();
         if (bpts > 0) {
-            (IERC20[] memory tokens,uint256[] memory totalBalances,uint256 lastChangeBlock) = balancerVault.getPoolTokens(balancerPoolId);
+            (IERC20[] memory tokens,uint256[] memory totalBalances,uint256 lastChangeBlock) = balancerVault.getPoolTokens(boostedPoolId);
             for (uint8 i = 0; i < numTokens; i++) {
-                uint256 tokenPooled = totalBalances[i].mul(bpts).div(bpt.totalSupply());
+                if (i == bptIndex) {
+                    continue;
+                }
+                uint256 lpts = totalBalances[i].mul(bpts).div(bpt.getVirtualSupply());
 
-                if (tokenPooled > 0) {
+                if (lpts > 0) {
                     if (tokens[i] != want) {
-                        // single step bc doing one swap within own pool i.e. wsteth -> weth
-                        IBalancerVault.BatchSwapStep[] memory steps = new IBalancerVault.BatchSwapStep[](1);
-                        steps[0] = IBalancerVault.BatchSwapStep(balancerPoolId,
-                            tokenIndex == 0 ? 1 : 0,
-                            tokenIndex,
-                            tokenPooled,
-                            abi.encode(0)
-                        );
+                        // swap
 
-                        // 2 assets of the pool, ordered by trade direction i.e. wsteth -> weth
-                        IAsset[] memory path = new IAsset[](2);
-                        path[0] = IAsset(address(tokenIndex == 0 ? tokens[1] : tokens[0]));
-                        path[1] = IAsset(address(want));
 
-                        tokenPooled = uint(- balancerVault.queryBatchSwap(IBalancerVault.SwapKind.GIVEN_IN,
-                            steps,
-                            path,
-                            IBalancerVault.FundManagement(address(this), false, address(this), false))[1]);
+
                     }
-                    totalWantPooled += tokenPooled;
+                    totalWantPooled += lpts;
                 }
             }
         }
         return totalWantPooled;
-    }
-
-    function _getSwapRequest(IERC20 token, uint256 amount, uint256 lastChangeBlock) internal view returns (IBalancerPool.SwapRequest memory request){
-        return IBalancerPool.SwapRequest(IBalancerPool.SwapKind.GIVEN_IN,
-            token,
-            want,
-            amount,
-            balancerPoolId,
-            lastChangeBlock,
-            address(this),
-            address(this),
-            abi.encode(0)
-        );
     }
 
     // request exact out

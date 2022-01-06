@@ -286,6 +286,10 @@ interface ILinearPool {
 
     function getTargets() external view returns (uint256 lowerTarget, uint256 upperTarget);
 
+}
+
+interface IStablePhantomPool is IBalancerPool{
+
     /**
      * @dev Returns the number of tokens in circulation.
      *
