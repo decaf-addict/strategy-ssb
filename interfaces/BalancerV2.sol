@@ -199,6 +199,14 @@ interface IBalancerVault {
         uint256 deadline
     ) external payable returns (int256[] memory);
 
+    // CAVEAT!! Do not call this after a batchSwap in the same txn
+    function queryBatchSwap(
+        SwapKind kind,
+        BatchSwapStep[] memory swaps,
+        address[] memory assets,
+        FundManagement memory funds
+    ) external returns (int256[] memory);
+
     function flashLoan(
         address recipient,
         IERC20[] memory tokens,
@@ -259,10 +267,8 @@ interface IFlashLoanRecipient {
     ) external;
 }
 
-interface ILinearPool {
+interface ILinearPool is IBalancerPool {
     function getVault() external view returns (address);
-
-    function getPoolId() external view returns (bytes32 poolId);
 
     function getMainToken() external view returns (address);
 
@@ -288,7 +294,7 @@ interface ILinearPool {
 
 }
 
-interface IStablePhantomPool is IBalancerPool{
+interface IStablePhantomPool is IBalancerPool {
 
     /**
      * @dev Returns the number of tokens in circulation.

@@ -6,7 +6,7 @@ pragma solidity 0.6.12;
 pragma experimental ABIEncoderV2;
 
 // These are the core Yearn libraries
-import {BaseStrategy, StrategyParams} from "@yearnvaults/contracts/BaseStrategy.sol";
+import {BaseStrategy} from "@yearnvaults/contracts/BaseStrategy.sol";
 import {SafeERC20, SafeMath, IERC20, Address} from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Math} from "@openzeppelin/contracts/math/Math.sol";
@@ -44,7 +44,7 @@ contract Strategy is BaseStrategy {
 
     struct SwapSteps {
         bytes32[] poolIds;
-        IAsset[] assets;
+        address[] assets;
     }
 
     uint256 internal constant max = type(uint256).max;
@@ -106,11 +106,11 @@ contract Strategy is BaseStrategy {
         numTokens = uint8(tokens.length);
         tokenIndex = type(uint8).max;
         for (uint8 i = 0; i < numTokens; i++) {
-            ILinearPool _lPool = ILinearPool(tokens[i]);
-            if (_lPool.getMainToken() == address(want)) {
+            ILinearPool _lpt = ILinearPool(address(tokens[i]));
+            if (_lpt.getMainToken() == address(want)) {
                 tokenIndex = i;
-                lpt = _lPool;
-            } else if (_lPool == bpt) {
+                lpt = _lpt;
+            } else if (address(_lpt) == address(bpt)) {
                 bptIndex = i;
             }
         }
@@ -212,7 +212,7 @@ contract Strategy is BaseStrategy {
         uint256 amountIn = Math.min(maxSingleDeposit, balanceOfWant());
 
         if (amountIn > 0) {
-            _enterPool(amountIn);
+            _swap(amountIn, IBalancerVault.SwapKind.GIVEN_IN, address(want), lpt, address(bpt), bpt, false);
 
             uint256 pooledDelta = balanceOfPooled().sub(pooledBefore);
             uint256 joinSlipped = amountIn > pooledDelta ? amountIn.sub(pooledDelta) : 0;
@@ -233,7 +233,7 @@ contract Strategy is BaseStrategy {
         if (_amountNeeded > looseAmount) {
             uint256 toExitAmount = _amountNeeded.sub(looseAmount);
 
-            _exitPool(toExitAmount);
+            _swap(toExitAmount, IBalancerVault.SwapKind.GIVEN_OUT, address(bpt), bpt, address(want), lpt, false);
 
             _liquidatedAmount = Math.min(balanceOfWant(), _amountNeeded);
             _loss = _amountNeeded.sub(_liquidatedAmount);
@@ -247,9 +247,8 @@ contract Strategy is BaseStrategy {
     function liquidateAllPositions() internal override returns (uint256 liquidated) {
         uint eta = estimateTotalAssets();
         uint256 bpts = balanceOfBpt();
-        if (bpts > 0) {
-            _exitPoolAll();
-        }
+
+        _swap(bpts, IBalancerVault.SwapKind.GIVEN_IN, address(bpt), bpt, address(want), lpt, false);
 
         liquidated = balanceOfWant();
         _enforceSlippageOut(eta, liquidated);
@@ -325,7 +324,7 @@ contract Strategy is BaseStrategy {
 
     function collectTradingFees(uint _profit) internal {
         if (_profit > 0) {
-            _exitPool(_profit);
+            _swap(_profit, IBalancerVault.SwapKind.GIVEN_OUT, address(bpt), bpt, address(want), lpt, false);
         }
     }
 
@@ -350,92 +349,42 @@ contract Strategy is BaseStrategy {
                 if (i == bptIndex) {
                     continue;
                 }
+
+                ILinearPool _lpt = ILinearPool(address(tokens[i]));
                 uint256 lpts = totalBalances[i].mul(bpts).div(bpt.getVirtualSupply());
-
-                if (lpts > 0) {
-                    if (tokens[i] != want) {
-                        // swap
-
-
-
-                    }
-                    totalWantPooled += lpts;
+                if (_lpt.getMainToken() != address(want)) {
+                    _swap(lpts, IBalancerVault.SwapKind.GIVEN_IN, address(_lpt), bpt, address(want), lpt, true);
                 }
+                totalWantPooled += lpts;
+
             }
         }
         return totalWantPooled;
     }
 
-    // request exact out
-    function _exitPoolAll() internal {
-        uint bpts = balanceOfBpt();
-        address[] memory assets = new address[](3);
-        assets[0] = address(bpt);
-        assets[1] = address(lpt);
-        assets[2] = address(want);
+    function _swap(uint _amount, IBalancerVault.SwapKind _swapKind, address _fromToken, IBalancerPool _fromPool, address _toToken, IBalancerPool _toPool, bool _mock) internal returns (int256[] memory _changes){
+        if (_amount > 0) {
+            address[] memory assets = new address[](3);
+            assets[0] = address(_fromToken);
+            assets[1] = address(lpt);
+            assets[2] = address(_toToken);
 
-        IBalancerVault.BatchSwapStep[] steps = new IBalancerVault.BatchSwapStep[](2);
-        steps[0] = IBalancerVault.BatchSwapStep(bpt.getPoolId(), 0, 1, bpts, abi.encode(0));
-        steps[1] = IBalancerVault.BatchSwapStep(lpt.getPoolId(), 1, 2, 0, abi.encode(0));
+            bool givenIn = _swapKind == IBalancerVault.SwapKind.GIVEN_IN;
+            uint fromBalance = IERC20(_fromToken).balanceOf(address(this));
 
-        int[] limits = new int[](3);
-        limits[0] = bpts;
+            IBalancerVault.BatchSwapStep[] memory steps = new IBalancerVault.BatchSwapStep[](2);
+            steps[0] = IBalancerVault.BatchSwapStep(_fromPool.getPoolId(), 0, 1, givenIn ? fromBalance : 0, abi.encode(0));
+            steps[1] = IBalancerVault.BatchSwapStep(_toPool.getPoolId(), 1, 2, givenIn ? 0 : _amount, abi.encode(0));
 
-        balancerVault.batchSwap(
-            IBalancerVault.SwapKind.GIVEN_IN,
-            steps,
-            assets,
-            funds,
-            limits,
-            max
-        );
-    }
-    // request exact out
-    function _exitPool(uint256 _amountTokenOut) internal {
-        address[] memory assets = new address[](3);
-        assets[0] = address(bpt);
-        assets[1] = address(lpt);
-        assets[2] = address(want);
+            int[] memory limits = new int[](3);
+            limits[0] = int(givenIn ? _amount : fromBalance);
 
-        IBalancerVault.BatchSwapStep[] steps = new IBalancerVault.BatchSwapStep[](2);
-        steps[0] = IBalancerVault.BatchSwapStep(bpt.getPoolId(), 0, 1, 0, abi.encode(0));
-        steps[1] = IBalancerVault.BatchSwapStep(lpt.getPoolId(), 1, 2, _amountTokenOut, abi.encode(0));
-
-        int[] limits = new int[](3);
-        limits[0] = balanceOfBpt();
-
-        balancerVault.batchSwap(
-            IBalancerVault.SwapKind.GIVEN_OUT,
-            steps,
-            assets,
-            funds,
-            limits,
-            max
-        );
-    }
-
-    // swap want for lpt, lpt for bpt
-    function _enterPool(uint _amountTokenIn) internal {
-        address[] memory assets = new address[](3);
-        assets[0] = address(want);
-        assets[1] = address(lpt);
-        assets[2] = address(bpt);
-
-        IBalancerVault.BatchSwapStep[] steps = new IBalancerVault.BatchSwapStep[](2);
-        steps[0] = IBalancerVault.BatchSwapStep(lpt.getPoolId(), 0, 1, _amountTokenIn, abi.encode(0));
-        steps[1] = IBalancerVault.BatchSwapStep(bpt.getPoolId(), 1, 2, 0, abi.encode(0));
-
-        int[] limits = new int[](3);
-        limits[0] = _amountTokenIn;
-
-        balancerVault.batchSwap(
-            IBalancerVault.SwapKind.GIVEN_IN,
-            steps,
-            assets,
-            funds,
-            limits,
-            max
-        );
+            return _mock
+            ? balancerVault.queryBatchSwap(IBalancerVault.SwapKind.GIVEN_IN, steps, assets, funds)
+            : balancerVault.batchSwap(IBalancerVault.SwapKind.GIVEN_IN, steps, assets, funds, limits, max);
+        } else {
+            return _changes;
+        }
     }
 
     // for partnership rewards like Lido or airdrops
@@ -475,7 +424,6 @@ contract Strategy is BaseStrategy {
     }
 
     // enforce that amount exited didn't slip beyond our tolerance
-    // just in case there's positive slippage
     function _enforceSlippageOut(uint _intended, uint _actual) internal {
         uint256 exitSlipped = _intended > _actual ? _intended.sub(_actual) : 0;
         uint256 maxLoss = _intended.mul(maxSlippageOut).div(basisOne);
