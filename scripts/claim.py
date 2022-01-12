@@ -2,6 +2,7 @@ import urllib.request, json
 from brownie import Contract, accounts, web3
 import click
 import json
+import os
 
 
 def main():
@@ -15,17 +16,27 @@ def main():
     # ("homestead-lido.json", ldo, ldo_distributor, "LDO")
 
     for reward in rewards:
-        f = open(f'./scripts/{reward[0]}', )
-        data = json.load(f)
-        config = data["config"]
-        tokens_data = data["tokens_data"]
-        distributionId = config["week"] - config["offset"]
+        for root, dirs, files in os.walk(f'./scripts'):
+            for name in files:
+                if name.startswith(("homestead_", ".json")):
+                    fileName = os.path.join(root, name)
+                    f = open(fileName, )
+                    data = json.load(f)
+                    config = data["config"]
+                    tokens_data = data["tokens_data"]
+                    distributionId = config["week"] - config["offset"]
 
-        for token_data in tokens_data:
-            claim = [(distributionId,
-                      int(token_data["claim_amount"]),
-                      reward[2],
-                      0,
-                      token_data["hex_proof"])]
-            merkleOrchard.claimDistributions(token_data["address"], claim, [reward[1]], {'from': dev})
-            print(f'{token_data["address"]} claimed {int(token_data["claim_amount"]) / 1e18} {reward[3]} ')
+                    for token_data in tokens_data:
+                        name = ""
+                        try:
+                            name = Contract(token_data["address"]).name()
+                        except:
+                            name = token_data["address"]
+                        print(f'claiming {name}')
+                        claim = [(distributionId,
+                                  int(token_data["claim_amount"]),
+                                  reward[2],
+                                  0,
+                                  token_data["hex_proof"])]
+                        merkleOrchard.claimDistributions(token_data["address"], claim, [reward[1]], {'from': dev})
+                        print(f'{name} claimed {int(token_data["claim_amount"]) / 1e18} {reward[3]} ')
