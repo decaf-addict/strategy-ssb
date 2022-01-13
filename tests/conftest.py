@@ -50,7 +50,7 @@ def token():
     # 0xdAC17F958D2ee523a2206206994597C13D831ec7 USDT
     # 0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0 wSTETH
     # 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 WETH
-    token_address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    token_address = "0xdAC17F958D2ee523a2206206994597C13D831ec7"
     yield Contract(token_address)
 
 
@@ -61,7 +61,7 @@ def token2():
     # 0xdAC17F958D2ee523a2206206994597C13D831ec7 USDT
     # 0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0 wSTETH
     # 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 WETH
-    token_address = "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0"
+    token_address = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
     yield Contract(token_address)
 
 
@@ -72,12 +72,12 @@ def token_whale(accounts):
     # 0xA929022c9107643515F5c777cE9a910F0D1e490C USDT
     # 0xba12222222228d8ba445958a75a0704d566bf2c8 wSTETH
     # 0x2F0b23f53734252Bda2277357e97e1517d6B042A WETH
-    return accounts.at("0x2F0b23f53734252Bda2277357e97e1517d6B042A", force=True)
+    return accounts.at("0xA929022c9107643515F5c777cE9a910F0D1e490C", force=True)
 
 
 @pytest.fixture
 def amount(accounts, token, user, token_whale):
-    amount = 300 * 10 ** token.decimals()
+    amount = 1_000_000 * 10 ** token.decimals()
     # In order to get some funds for the token you are about to use,
     token.transfer(user, amount, {"from": token_whale})
     yield amount
@@ -85,14 +85,14 @@ def amount(accounts, token, user, token_whale):
 
 @pytest.fixture
 def amount2(accounts, token2, user):
-    amount = 300 * 10 ** token2.decimals()
+    amount = 1_000_000 * 10 ** token2.decimals()
     # In order to get some funds for the token you are about to use,
     # 0x5d3a536E4D6DbD6114cc1Ead35777bAB948E3643 DAI
     # 0x0A59649758aa4d66E25f08Dd01271e891fe52199 USDC
     # 0xA929022c9107643515F5c777cE9a910F0D1e490C USDT
     # 0xba12222222228d8ba445958a75a0704d566bf2c8 wSTETH
     # 0x2F0b23f53734252Bda2277357e97e1517d6B042A WETH
-    reserve = accounts.at("0xba12222222228d8ba445958a75a0704d566bf2c8", force=True)
+    reserve = accounts.at("0x0A59649758aa4d66E25f08Dd01271e891fe52199", force=True)
     token2.transfer(user, amount, {"from": reserve})
     yield amount
 
@@ -179,7 +179,8 @@ def balancer_vault():
 def pool():
     # 0x06Df3b2bbB68adc8B0e302443692037ED9f91b42 stable pool
     # 0x32296969Ef14EB0c6d29669C550D4a0449130230 metastable eth pool
-    address = "0x32296969Ef14EB0c6d29669C550D4a0449130230"
+    # 0x7B50775383d3D6f0215A8F290f2C9e2eEBBEceb2 boosted pool
+    address = "0x7B50775383d3D6f0215A8F290f2C9e2eEBBEceb2"
     yield Contract(address)
 
 
@@ -209,7 +210,7 @@ def ldoWethPoolId():
 
 @pytest.fixture
 def swapStepsBal(balWethPoolId, bal, weth):
-    yield ([balWethPoolId], [bal, weth])
+    yield ([balWethPoolId], [bal, weth, ])
 
 
 @pytest.fixture
@@ -226,12 +227,17 @@ def swapStepsBal2(balWethPoolId, wethToken2PoolId, bal, weth, wsteth):
 def swapStepsLdo2(ldoWethPoolId, wethToken2PoolId, ldo, weth, wsteth):
     yield ([ldoWethPoolId], [ldo, weth, wsteth])
 
+@pytest.fixture
+def strategyFactory(strategist, vault, StrategyFactory, balancer_vault, pool):
+    factory = strategist.deploy(StrategyFactory, vault, balancer_vault, pool, 5, 5, 1_000_000, 2 * 60 * 60)
+    yield factory
+
 
 @pytest.fixture
-def strategy(strategist, keeper, vault, Strategy, gov, balancer_vault, pool, bal, ldo, management, swapStepsBal,
+def strategy(strategist, strategyFactory, keeper, vault, Strategy, gov, balancer_vault, pool, bal, ldo, management, swapStepsBal,
              swapStepsLdo):
-    strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, 5, 5, 30, 2 * 60 * 60)
-    strategy.setKeeper(keeper)
+    strategy = Strategy.at(strategyFactory.original())
+    strategy.setKeeper(keeper, {'from': gov})
     strategy.whitelistRewards(bal, swapStepsBal, {'from': gov})
     strategy.whitelistRewards(ldo, swapStepsLdo, {'from': gov})
     vault.addStrategy(strategy, 10_000, 0, 2 ** 256 - 1, 1_000, {"from": gov})

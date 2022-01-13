@@ -27,7 +27,7 @@ def test_operation(
 
 
 def test_emergency_exit(
-        chain, accounts, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX
+        chain, accounts, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, gov
 ):
     # Deposit to the vault
     token.approve(vault.address, amount, {"from": user})
@@ -37,7 +37,7 @@ def test_emergency_exit(
     assert pytest.approx(strategy.estimateTotalAssets({"from": user}).return_value, rel=RELATIVE_APPROX) == amount
 
     # set emergency and exit
-    strategy.setEmergencyExit()
+    strategy.setEmergencyExit({"from": gov})
     chain.sleep(1)
     strategy.harvest({"from": strategist})
     assert strategy.estimateTotalAssets({"from": user}).return_value < amount
@@ -114,11 +114,12 @@ def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RE
 
     half = int(amount / 2)
     # profits
-    assert strategy.estimateTotalAssets({"from": gov}).return_value >= half - slippageIn/2
+    assert strategy.estimateTotalAssets({"from": gov}).return_value >= half - slippageIn / 2
 
 
 def test_change_debt(
-        chain, gov, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, bal, bal_whale, ldo, ldo_whale, web3
+        chain, gov, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, bal, bal_whale, ldo, ldo_whale,
+        web3
 ):
     # Deposit to the vault and harvest
     token.approve(vault.address, amount, {"from": user})
