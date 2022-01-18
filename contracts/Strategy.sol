@@ -188,6 +188,10 @@ contract Strategy is BaseStrategy {
         }
     }
 
+    function liquidate(uint256 _amountNeeded) external returns (uint256 _liquidatedAmount, uint256 _loss){
+        return liquidatePosition(_amountNeeded);
+    }
+
     function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _liquidatedAmount, uint256 _loss){
         emit Debug("_amountNeeded", _amountNeeded);
         uint estimate = estimateTotalAssets();
@@ -282,7 +286,7 @@ contract Strategy is BaseStrategy {
                 balancerVault.batchSwap(IBalancerVault.SwapKind.GIVEN_IN,
                     steps,
                     swapSteps[i].assets,
-                    IBalancerVault.FundManagement(address(this), false, address(this), false),
+                    funds,
                     limits,
                     now + 10);
             }
@@ -305,8 +309,6 @@ contract Strategy is BaseStrategy {
     function balanceOfReward(uint256 index) public view returns (uint256 _amount){
         return rewardTokens[index].balanceOf(address(this));
     }
-
-    event Debug(int[] values);
 
     function balanceOfPooled() public returns (uint256 _amount){
         uint256 totalWantPooled;

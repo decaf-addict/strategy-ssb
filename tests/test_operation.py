@@ -98,6 +98,9 @@ def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RE
 
     # Harvest 2: Realize profit
     chain.sleep(1)
+
+    util.stateOfStrat("after deposit all", strategy, token)
+    assert False
     strategy.harvest({"from": strategist})
     chain.sleep(3600 * 6)  # 6 hrs needed for profits to unlock
     chain.mine(1)
@@ -218,3 +221,4 @@ def test_rewards(
     assert strategy.numRewards() == 2
     strategy.delistAllRewards({'from': gov})
     assert strategy.numRewards() == 0
+
