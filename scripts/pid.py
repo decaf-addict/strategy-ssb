@@ -1,7 +1,6 @@
 from brownie import Contract
 import time
 
-
 # 0 Symphony Nr 10. Opus 138.
 # 1 The Grand Orchestra
 # 2 Steady Beets
@@ -31,6 +30,11 @@ import time
 # 26 Beethoven's Battle of the Bands
 # 27 Variations on a theme by USD Circle
 # 28 BeethovenxOhmEmissionToken
+# 29 WAGMI Index
+# 30 0xC7f084bCB91F779617B41602f85102849098D6a2
+# 31 Ode to Joy - Symphony Nr 9
+# 32 Dante Symphony
+# 33 Steady Beets, Act II
 
 def main():
     masterChef = Contract("0x8166994d9ebBe5829EC86Bd81258149B87faCfd3")
