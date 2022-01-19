@@ -5,7 +5,7 @@ import util
 
 
 def test_operation(
-        chain, accounts, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX
+        chain, accounts, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, gov
 ):
     # Deposit to the vault
     user_balance_before = token.balanceOf(user)
@@ -45,7 +45,7 @@ def test_emergency_exit(
 
 def test_profitable_harvest(
         chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, bal, bal_whale, ldo,
-        ldo_whale, management
+        ldo_whale, management, gov
 ):
     # Deposit to the vault
     token.approve(vault.address, amount, {"from": user})
@@ -69,6 +69,7 @@ def test_profitable_harvest(
 
     assert strategy.estimateTotalAssets({"from": user}).return_value + profit > amount
     assert vault.pricePerShare() > before_pps
+    print(f'total gains: {vault.strategies(strategy)["totalGain"]}')
 
 
 def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, bal, bal_whale,
@@ -84,13 +85,13 @@ def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RE
     strategy.harvest({"from": strategist})
     assert pytest.approx(strategy.estimateTotalAssets({"from": gov}).return_value, rel=RELATIVE_APPROX) == amount
 
-    chain.sleep(strategy.minDepositPeriod() + 1)
+    chain.sleep(strategy.poolParams()["minDepositPeriod"] + 1)
     chain.mine(1)
     while strategy.tendTrigger(0) == True:
         strategy.tend({'from': gov})
         util.stateOfStrat("tend", strategy, token)
         assert pytest.approx(strategy.estimateTotalAssets({"from": gov}).return_value, rel=RELATIVE_APPROX) == amount
-        chain.sleep(strategy.minDepositPeriod() + 1)
+        chain.sleep(strategy.poolParams()["minDepositPeriod"] + 1)
         chain.mine(1)
 
     before_pps = vault.pricePerShare()
@@ -100,13 +101,13 @@ def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RE
     chain.sleep(1)
 
     util.stateOfStrat("after deposit all", strategy, token)
-    assert False
+
     strategy.harvest({"from": strategist})
     chain.sleep(3600 * 6)  # 6 hrs needed for profits to unlock
     chain.mine(1)
     profit = token.balanceOf(vault.address)  # Profits go to vault
 
-    slippageIn = amount * strategy.maxSlippageIn() / 10000
+    slippageIn = amount * strategy.poolParams()["maxSlippageIn"] / 10000
     assert strategy.estimateTotalAssets({"from": gov}).return_value + profit > (amount - slippageIn)
     assert vault.pricePerShare() > before_pps
 
@@ -145,22 +146,18 @@ def test_change_debt(
 
     vault.updateStrategyDebtRatio(strategy.address, 5_000, {"from": gov})
     chain.sleep(1)
-    web3.provider.make_request("miner_stop", [])
 
     strategy.harvest({"from": strategist, "required_confs": 0})
     util.stateOfStrat("after harvest 5000", strategy, token)
 
     eta = strategy.estimateTotalAssets({"from": gov}).return_value
-    # When ganache is started with automing this is the only way to get two transactions within the same block.
 
-    web3.provider.make_request("evm_mine", [chain.time() + 5])
-    web3.provider.make_request("miner_start", [])
-
-    # compounded slippage
     assert pytest.approx(eta, rel=RELATIVE_APPROX) == half
 
     vault.updateStrategyDebtRatio(strategy.address, 0, {"from": gov})
     chain.sleep(1)
+
+    assert False
     strategy.harvest({"from": strategist})
     util.stateOfStrat("after harvest", strategy, token)
 
@@ -209,7 +206,7 @@ def test_triggers(
     assert strategy.harvestTrigger(0) == True
 
     assert strategy.tendTrigger(0) == False
-    chain.sleep(strategy.minDepositPeriod() + 1)
+    chain.sleep(strategy.poolParams()["minDepositPeriod"] + 1)
     chain.mine(1)
     assert strategy.tendTrigger(0) == True
 

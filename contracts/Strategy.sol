@@ -24,23 +24,22 @@ contract Strategy is BaseStrategy {
     using SafeMath for uint256;
 
     IERC20 internal constant weth = IERC20(address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2));
-    IBalancerVault public balancerVault;
+    IERC20[] public rewardTokens;
+    SwapSteps[] internal swapSteps;
+    PoolData public poolData;
 
     /// @dev boosted pool token. Primary pool that the linear pool integrates into. For boosted pools, bpt is preminted. Instead of joining/exiting
-    /// pool with want, we have to swap for it.
-    IStablePhantomPool public bpt;
-
-    // @dev linear pool token. Primary linear pool that the strategy interacts with to wrap/unwrap want token
-    ILinearPool public lpt;
-    IERC20[] public rewardTokens;
-    IAsset[] internal assets;
-    SwapSteps[] internal swapSteps;
-    uint256[] internal minAmountsOut;
-
-    bytes32 public boostedPoolId;
-    uint8 public numTokens;
-    uint8 public tokenIndex;
-    uint8 public bptIndex;
+    /// pool with want, we have to swap for it.   
+    /// @dev linear pool token. Primary linear pool that the strategy interacts with to wrap/unwrap want token
+    struct PoolData {
+        IBalancerVault balancerVault;
+        IStablePhantomPool bpt;
+        ILinearPool lpt;
+        bytes32 boostedPoolId;
+        uint8 numTokens;
+        uint8 tokenIndex;
+        uint8 bptIndex;
+    }
 
     struct SwapSteps {
         bytes32[] poolIds;
@@ -48,11 +47,17 @@ contract Strategy is BaseStrategy {
     }
 
     uint256 internal constant max = type(uint256).max;
-    uint256 public maxSlippageIn;
-    uint256 public maxSlippageOut;
-    uint256 public maxSingleDeposit;
-    uint256 public minDepositPeriod;
-    uint256 public lastDepositTime;
+
+    PoolParams public poolParams;
+
+    struct PoolParams {
+        uint256 maxSlippageIn;
+        uint256 maxSlippageOut;
+        uint256 maxSingleDeposit;
+        uint256 minDepositPeriod;
+        uint256 lastDepositTime;
+    }
+
     uint256 internal constant basisOne = 10000;
     uint internal etaCached;
 
@@ -95,38 +100,38 @@ contract Strategy is BaseStrategy {
         uint256 _maxSingleDeposit,
         uint256 _minDepositPeriod)
     internal {
-        require(address(bpt) == address(0x0), "Strategy already initialized!");
+        require(address(poolData.bpt) == address(0x0), "Strategy already initialized!");
         healthCheck = address(0xDDCea799fF1699e98EDF118e0629A974Df7DF012);
-        bpt = IStablePhantomPool(_balancerPool);
-        boostedPoolId = bpt.getPoolId();
-        balancerVault = IBalancerVault(_balancerVault);
-        (IERC20[] memory tokens,,) = balancerVault.getPoolTokens(boostedPoolId);
-        numTokens = uint8(tokens.length);
-        tokenIndex = type(uint8).max;
-        for (uint8 i = 0; i < numTokens; i++) {
+        poolData.bpt = IStablePhantomPool(_balancerPool);
+        poolData.boostedPoolId = poolData.bpt.getPoolId();
+        poolData.balancerVault = IBalancerVault(_balancerVault);
+        (IERC20[] memory tokens,,) = poolData.balancerVault.getPoolTokens(poolData.boostedPoolId);
+        poolData.numTokens = uint8(tokens.length);
+        poolData.tokenIndex = type(uint8).max;
+        for (uint8 i = 0; i < poolData.numTokens; i++) {
             ILinearPool _lpt = ILinearPool(address(tokens[i]));
-            if (address(_lpt) == address(bpt)) {
-                bptIndex = i;
+            if (address(_lpt) == address(poolData.bpt)) {
+                poolData.bptIndex = i;
             } else if (_lpt.getMainToken() == address(want)) {
-                tokenIndex = i;
-                lpt = _lpt;
+                poolData.tokenIndex = i;
+                poolData.lpt = _lpt;
             }
         }
-        require(tokenIndex != type(uint8).max, "token not supported in pool!");
+        require(poolData.tokenIndex != type(uint8).max, "token not supported in pool!");
 
-        maxSlippageIn = _maxSlippageIn;
-        maxSlippageOut = _maxSlippageOut;
-        maxSingleDeposit = _maxSingleDeposit.mul(10 ** uint256(ERC20(address(want)).decimals()));
-        minDepositPeriod = _minDepositPeriod;
+        poolParams.maxSlippageIn = _maxSlippageIn;
+        poolParams.maxSlippageOut = _maxSlippageOut;
+        poolParams.maxSingleDeposit = _maxSingleDeposit.mul(10 ** uint256(ERC20(address(want)).decimals()));
+        poolParams.minDepositPeriod = _minDepositPeriod;
 
-        want.safeApprove(address(balancerVault), max);
+        want.safeApprove(address(poolData.balancerVault), max);
     }
 
     // ******** OVERRIDE THESE METHODS FROM BASE CONTRACT ************
 
     function name() external view override returns (string memory) {
         // Add your own name here, suggestion e.g. "StrategyCreamYFI"
-        return string(abi.encodePacked("SingleSidedBalancer ", bpt.symbol(), "Pool ", ERC20(address(want)).symbol()));
+        return string(abi.encodePacked("SingleSidedBalancer ", poolData.bpt.symbol(), "Pool ", ERC20(address(want)).symbol()));
     }
 
     function estimatedTotalAssets() public view override returns (uint256) {
@@ -137,6 +142,19 @@ contract Strategy is BaseStrategy {
     function estimateTotalAssets() public returns (uint256 _wants) {
         etaCached = balanceOfWant().add(balanceOfPooled());
         return etaCached;
+    }
+
+    function testPrepare1() external returns (uint){
+        uint256 total = estimateTotalAssets();
+        uint256 debt = vault.strategies(address(this)).totalDebt;
+        uint toCollect = total > debt ? total.sub(debt) : 0;
+
+        uint256 beforeWant = balanceOfWant();
+        return toCollect;
+    }
+
+    function testAdjust() external {
+        adjustPosition(0);
     }
 
     function prepareReturn(uint256 _debtOutstanding) internal override returns (uint256 _profit, uint256 _loss, uint256 _debtPayment){
@@ -169,22 +187,22 @@ contract Strategy is BaseStrategy {
     event Debug(string msg, uint value);
 
     function adjustPosition(uint256 _debtOutstanding) internal override {
-        if (now - lastDepositTime < minDepositPeriod) {
+        if (now - poolParams.lastDepositTime < poolParams.minDepositPeriod) {
             return;
         }
 
         uint256 pooledBefore = balanceOfPooled();
-        uint256 amountIn = Math.min(maxSingleDeposit, balanceOfWant());
+        uint256 amountIn = Math.min(poolParams.maxSingleDeposit, balanceOfWant());
 
         if (amountIn > 0) {
-            _swap(amountIn, IBalancerVault.SwapKind.GIVEN_IN, address(want), lpt, address(bpt), bpt, false);
+            _swap(amountIn, IBalancerVault.SwapKind.GIVEN_IN, address(want), poolData.lpt, address(poolData.bpt), poolData.bpt, false);
 
             uint256 pooledDelta = balanceOfPooled().sub(pooledBefore);
             uint256 joinSlipped = amountIn > pooledDelta ? amountIn.sub(pooledDelta) : 0;
-            uint256 maxLoss = amountIn.mul(maxSlippageIn).div(basisOne);
+            uint256 maxLoss = amountIn.mul(poolParams.maxSlippageIn).div(basisOne);
 
-            require(joinSlipped <= maxLoss, "Exceeded maxSlippageIn!");
-            lastDepositTime = now;
+            require(joinSlipped <= maxLoss, "slipped in");
+            poolParams.lastDepositTime = now;
         }
     }
 
@@ -196,7 +214,10 @@ contract Strategy is BaseStrategy {
         emit Debug("_amountNeeded", _amountNeeded);
         uint estimate = estimateTotalAssets();
         emit Debug("estimate", estimate);
-        if (estimate < _amountNeeded) {
+        
+        // overshoot by 5% to be safe as the estimation from bpt to want isn't super accurate.
+        // This means that if an exit asks for 95% of pooled, it'll exit everything to better ensure withdraw succeeds
+        if (estimate.mul(19).div(20) < _amountNeeded) {
             _liquidatedAmount = liquidateAllPositions();
             return (_liquidatedAmount, _amountNeeded.sub(_liquidatedAmount));
         }
@@ -204,7 +225,7 @@ contract Strategy is BaseStrategy {
         uint256 looseAmount = balanceOfWant();
         if (_amountNeeded > looseAmount) {
             uint256 toExitAmount = _amountNeeded.sub(looseAmount);
-            _swap(toExitAmount, IBalancerVault.SwapKind.GIVEN_OUT, address(want), lpt, address(bpt), bpt, false);
+            _swap(toExitAmount, IBalancerVault.SwapKind.GIVEN_OUT, address(want), poolData.lpt, address(poolData.bpt), poolData.bpt, false);
 
             _liquidatedAmount = Math.min(balanceOfWant(), _amountNeeded);
             _loss = _amountNeeded.sub(_liquidatedAmount);
@@ -219,7 +240,7 @@ contract Strategy is BaseStrategy {
         uint eta = estimateTotalAssets();
         uint256 bpts = balanceOfBpt();
 
-        _swap(bpts, IBalancerVault.SwapKind.GIVEN_IN, address(bpt), bpt, address(want), lpt, false);
+        _swap(bpts, IBalancerVault.SwapKind.GIVEN_IN, address(poolData.bpt), poolData.bpt, address(want), poolData.lpt, false);
 
         liquidated = balanceOfWant();
         _enforceSlippageOut(eta, liquidated);
@@ -227,7 +248,7 @@ contract Strategy is BaseStrategy {
     }
 
     function prepareMigration(address _newStrategy) internal override {
-        bpt.transfer(_newStrategy, balanceOfBpt());
+        poolData.bpt.transfer(_newStrategy, balanceOfBpt());
         for (uint i = 0; i < rewardTokens.length; i++) {
             IERC20 token = rewardTokens[i];
             uint256 balance = token.balanceOf(address(this));
@@ -242,26 +263,18 @@ contract Strategy is BaseStrategy {
     function ethToWant(uint256 _amtInWei) public view override returns (uint256){}
 
     function tendTrigger(uint256 callCostInWei) public view override returns (bool) {
-        return now.sub(lastDepositTime) > minDepositPeriod && balanceOfWant() > 0;
+        return now.sub(poolParams.lastDepositTime) > poolParams.minDepositPeriod && balanceOfWant() > 0;
     }
 
-    function harvestTrigger(uint256 callCostInWei) public view override returns (bool){
-        bool hasRewards;
-        for (uint8 i = 0; i < rewardTokens.length; i++) {
-            ERC20 rewardToken = ERC20(address(rewardTokens[i]));
-
-            uint decReward = rewardToken.decimals();
-            uint decWant = ERC20(address(want)).decimals();
-            if (rewardToken.balanceOf(address(this)) > 10 ** (decReward > decWant ? decReward.sub(decWant) : 0)) {
-                hasRewards = true;
-                break;
-            }
-        }
-        return super.harvestTrigger(callCostInWei) && hasRewards;
-    }
+    /// Leaving this blank to save space since harvests are done manually
+    function harvestTrigger(uint256 callCostInWei) public view override returns (bool){}
 
 
     // HELPERS //
+    function sellRewards() external onlyVaultManagers {
+        _sellRewards();
+    }
+
     function _sellRewards() internal {
         for (uint8 i = 0; i < rewardTokens.length; i++) {
             ERC20 rewardToken = ERC20(address(rewardTokens[i]));
@@ -283,7 +296,7 @@ contract Strategy is BaseStrategy {
                         abi.encode(0)
                     );
                 }
-                balancerVault.batchSwap(IBalancerVault.SwapKind.GIVEN_IN,
+                poolData.balancerVault.batchSwap(IBalancerVault.SwapKind.GIVEN_IN,
                     steps,
                     swapSteps[i].assets,
                     funds,
@@ -293,9 +306,12 @@ contract Strategy is BaseStrategy {
         }
     }
 
-    function _collectTradingFees(uint _profit) internal {
-        _swap(_profit, IBalancerVault.SwapKind.GIVEN_OUT, address(bpt), bpt, address(want), lpt, false);
+    function collectTradingFees(uint _profit) external onlyVaultManagers {
+        _collectTradingFees(_profit);
+    }
 
+    function _collectTradingFees(uint _profit) internal {
+        _swap(_profit, IBalancerVault.SwapKind.GIVEN_OUT, address(want), poolData.lpt, address(poolData.bpt), poolData.bpt, false);
     }
 
     function balanceOfWant() public view returns (uint256 _amount){
@@ -303,7 +319,7 @@ contract Strategy is BaseStrategy {
     }
 
     function balanceOfBpt() public view returns (uint256 _amount){
-        return bpt.balanceOf(address(this));
+        return poolData.bpt.balanceOf(address(this));
     }
 
     function balanceOfReward(uint256 index) public view returns (uint256 _amount){
@@ -314,17 +330,17 @@ contract Strategy is BaseStrategy {
         uint256 totalWantPooled;
         uint bpts = balanceOfBpt();
         if (bpts > 0) {
-            (IERC20[] memory tokens,uint256[] memory totalBalances,uint256 lastChangeBlock) = balancerVault.getPoolTokens(boostedPoolId);
-            for (uint8 i = 0; i < numTokens; i++) {
-                if (i == bptIndex) {
+            (IERC20[] memory tokens, uint256[] memory totalBalances, uint256 lastChangeBlock) = poolData.balancerVault.getPoolTokens(poolData.boostedPoolId);
+            for (uint8 i = 0; i < poolData.numTokens; i++) {
+                if (i == poolData.bptIndex) {
                     continue;
                 }
 
                 ILinearPool _lpt = ILinearPool(address(tokens[i]));
                 uint decWant = ERC20(address(want)).decimals();
                 uint decLpt = ERC20(address(_lpt)).decimals();
-                uint256 lpts = totalBalances[i].mul(bpts).div(bpt.getVirtualSupply());
-                int[] memory deltas = _swap(lpts, IBalancerVault.SwapKind.GIVEN_IN, address(_lpt), bpt, address(want), lpt, true);
+                uint256 lpts = totalBalances[i].mul(bpts).div(poolData.bpt.getVirtualSupply());
+                int[] memory deltas = _swap(lpts, IBalancerVault.SwapKind.GIVEN_IN, address(_lpt), poolData.bpt, address(want), poolData.lpt, true);
                 lpts = uint(- deltas[deltas.length - 1]);
                 totalWantPooled += lpts;
             }
@@ -341,6 +357,10 @@ contract Strategy is BaseStrategy {
     }
 
 
+    function swap(uint _amount, IBalancerVault.SwapKind _swapKind, address _swap1Token, IBalancerPool _swap1Pool, address _swap2Token, IBalancerPool _swap2Pool, bool _mock) external onlyVaultManagers returns (int256[] memory _changes){
+        return _swap(_amount, _swapKind, _swap1Token, _swap1Pool, _swap2Token, _swap2Pool, false);
+    }
+
     // In swaps of the type given_in you're pushing a token into a pipeline and getting another one at the end.
     // At each step along the way, the output of a swap becomes input of the next.
     // @param _amount = amount sent to pool to trade
@@ -352,12 +372,12 @@ contract Strategy is BaseStrategy {
     function _swap(uint _amount, IBalancerVault.SwapKind _swapKind, address _swap1Token, IBalancerPool _swap1Pool, address _swap2Token, IBalancerPool _swap2Pool, bool _mock) internal returns (int256[] memory _changes){
         if (_amount > 0) {
             StackHelper memory sh;
-            sh.isSame = _swap1Token == address(lpt);
+            sh.isSame = _swap1Token == address(poolData.lpt);
 
             address[] memory assets = new address[](sh.isSame ? 2 : 3);
             assets[sh.assetsIndex] = _swap1Token;
             if (!sh.isSame) sh.assetsIndex++;
-            assets[sh.assetsIndex] = address(lpt);
+            assets[sh.assetsIndex] = address(poolData.lpt);
             sh.assetsIndex++;
             assets[sh.assetsIndex] = _swap2Token;
 
@@ -381,8 +401,8 @@ contract Strategy is BaseStrategy {
             limits[sh.givenIn ? 0 : 2] = int(sh.givenIn ? _amount : IERC20(_swap2Token).balanceOf(address(this)));
 
             return _mock
-            ? balancerVault.queryBatchSwap(_swapKind, steps, assets, funds)
-            : balancerVault.batchSwap(_swapKind, steps, assets, funds, limits, max);
+            ? poolData.balancerVault.queryBatchSwap(_swapKind, steps, assets, funds)
+            : poolData.balancerVault.batchSwap(_swapKind, steps, assets, funds, limits, max);
         } else {
             return _changes;
         }
@@ -391,14 +411,14 @@ contract Strategy is BaseStrategy {
     // for partnership rewards like Lido or airdrops
     function whitelistRewards(address _rewardToken, SwapSteps memory _steps) public onlyVaultManagers {
         IERC20 token = IERC20(_rewardToken);
-        token.approve(address(balancerVault), max);
+        token.approve(address(poolData.balancerVault), max);
         rewardTokens.push(token);
         swapSteps.push(_steps);
     }
 
     function delistAllRewards() public onlyVaultManagers {
         for (uint i = 0; i < rewardTokens.length; i++) {
-            rewardTokens[i].approve(address(balancerVault), 0);
+            rewardTokens[i].approve(address(poolData.balancerVault), 0);
         }
         IERC20[] memory noRewardTokens;
         rewardTokens = noRewardTokens;
@@ -409,26 +429,26 @@ contract Strategy is BaseStrategy {
         return rewardTokens.length;
     }
 
-    /// @param _maxSlippageIn in bips
-    /// @param _maxSlippageOut in bips
-    /// @param _maxSingleDeposit decimal agnostic (enter 100 for 100 tokens)
-    /// @param _minDepositPeriod in seconds
-    function setParams(uint256 _maxSlippageIn, uint256 _maxSlippageOut, uint256 _maxSingleDeposit, uint256 _minDepositPeriod) public onlyVaultManagers {
-        require(_maxSlippageIn <= basisOne, "maxSlippageIn too high");
-        maxSlippageIn = _maxSlippageIn;
+    /// @param maxSlippageIn in bips
+    /// @param maxSlippageOut in bips
+    /// @param maxSingleDeposit decimal agnostic (enter 100 for 100 tokens)
+    /// @param minDepositPeriod in seconds
+    function setParams(uint256 maxSlippageIn, uint256 maxSlippageOut, uint256 maxSingleDeposit, uint256 minDepositPeriod) public onlyVaultManagers {
+        require(maxSlippageIn <= basisOne, "in too high");
+        poolParams.maxSlippageIn = maxSlippageIn;
 
-        require(_maxSlippageOut <= basisOne, "maxSlippageOut too high");
-        maxSlippageOut = _maxSlippageOut;
+        require(maxSlippageOut <= basisOne, "out too high");
+        poolParams.maxSlippageOut = maxSlippageOut;
 
-        maxSingleDeposit = _maxSingleDeposit.mul(10 ** uint256(ERC20(address(want)).decimals()));
-        minDepositPeriod = _minDepositPeriod;
+        poolParams.maxSingleDeposit = maxSingleDeposit.mul(10 ** uint256(ERC20(address(want)).decimals()));
+        poolParams.minDepositPeriod = minDepositPeriod;
     }
 
     // enforce that amount exited didn't slip beyond our tolerance
     function _enforceSlippageOut(uint _intended, uint _actual) internal {
         uint256 exitSlipped = _intended > _actual ? _intended.sub(_actual) : 0;
-        uint256 maxLoss = _intended.mul(maxSlippageOut).div(basisOne);
-        require(exitSlipped <= maxLoss, "Exceeded maxSlippageOut!");
+        uint256 maxLoss = _intended.mul(poolParams.maxSlippageOut).div(basisOne);
+        require(exitSlipped <= maxLoss, "slipped out");
     }
 
     function getSwapSteps() public view returns (SwapSteps[] memory){
