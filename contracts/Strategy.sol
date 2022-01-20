@@ -123,7 +123,8 @@ contract Strategy is BaseStrategy {
         poolParams.maxSlippageOut = _maxSlippageOut;
         poolParams.maxSingleDeposit = _maxSingleDeposit.mul(10 ** uint256(ERC20(address(want)).decimals()));
         poolParams.minDepositPeriod = _minDepositPeriod;
-
+        poolParams.liquidateAllBuffer = 3;
+        poolParams.collectFeesOverwrite = 0;
         want.safeApprove(address(poolData.balancerVault), max);
     }
 
@@ -214,10 +215,10 @@ contract Strategy is BaseStrategy {
         emit Debug("_amountNeeded", _amountNeeded);
         uint estimate = estimateTotalAssets();
         emit Debug("estimate", estimate);
-        
-        // overshoot by 5% to be safe as the estimation from bpt to want isn't super accurate.
-        // This means that if an exit asks for 95% of pooled, it'll exit everything to better ensure withdraw succeeds
-        if (estimate.mul(19).div(20) < _amountNeeded) {
+
+        // overshoot by (100-x)% to be safe as the estimation from bpt to want isn't super accurate.
+        // This means that if an exit asks for x% of pooled, it'll exit everything to better ensure withdraw succeeds
+        if (estimate.mul(poolParams.liquidateAllBuffer).div(100) < _amountNeeded) {
             _liquidatedAmount = liquidateAllPositions();
             return (_liquidatedAmount, _amountNeeded.sub(_liquidatedAmount));
         }
@@ -310,7 +311,11 @@ contract Strategy is BaseStrategy {
         _collectTradingFees(_profit);
     }
 
+
     function _collectTradingFees(uint _profit) internal {
+        if (vault.strategies(address(this)).debtRatio == 0 || emergencyExit) {
+            return;
+        }
         _swap(_profit, IBalancerVault.SwapKind.GIVEN_OUT, address(want), poolData.lpt, address(poolData.bpt), poolData.bpt, false);
     }
 
@@ -433,7 +438,7 @@ contract Strategy is BaseStrategy {
     /// @param maxSlippageOut in bips
     /// @param maxSingleDeposit decimal agnostic (enter 100 for 100 tokens)
     /// @param minDepositPeriod in seconds
-    function setParams(uint256 maxSlippageIn, uint256 maxSlippageOut, uint256 maxSingleDeposit, uint256 minDepositPeriod) public onlyVaultManagers {
+    function setParams(uint256 maxSlippageIn, uint256 maxSlippageOut, uint256 maxSingleDeposit, uint256 minDepositPeriod, uint8 _liquidateAllBuffer) public onlyVaultManagers {
         require(maxSlippageIn <= basisOne, "in too high");
         poolParams.maxSlippageIn = maxSlippageIn;
 

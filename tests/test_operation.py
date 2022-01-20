@@ -2,7 +2,8 @@ import brownie
 from brownie import Contract
 import pytest
 import util
-
+import warnings
+warnings.simplefilter('ignore')
 
 def test_operation(
         chain, accounts, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, gov
@@ -157,7 +158,6 @@ def test_change_debt(
     vault.updateStrategyDebtRatio(strategy.address, 0, {"from": gov})
     chain.sleep(1)
 
-    assert False
     strategy.harvest({"from": strategist})
     util.stateOfStrat("after harvest", strategy, token)
 
