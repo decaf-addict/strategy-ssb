@@ -20,7 +20,6 @@ interface IName {
 /// tokens being other bpts.
 contract Strategy is BaseStrategy {
     using SafeERC20 for IERC20;
-    using Address for address;
     using SafeMath for uint256;
 
     IERC20 internal constant weth = IERC20(address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2));
@@ -28,9 +27,9 @@ contract Strategy is BaseStrategy {
     SwapSteps[] internal swapSteps;
     PoolData public poolData;
 
-    /// @dev boosted pool token. Primary pool that the linear pool integrates into. For boosted pools, bpt is preminted. Instead of joining/exiting
+    /// @dev Boosted pool token (bpt): Primary pool that the linear pool integrates into. For boosted pools, bpt is preminted. Instead of joining/exiting
     /// pool with want, we have to swap for it.   
-    /// @dev linear pool token. Primary linear pool that the strategy interacts with to wrap/unwrap want token
+    /// Linear pool token (lpt): Primary linear pool that the strategy interacts with to wrap/unwrap want token
     struct PoolData {
         IBalancerVault balancerVault;
         IStablePhantomPool bpt;
@@ -56,12 +55,13 @@ contract Strategy is BaseStrategy {
         uint256 maxSingleDeposit;
         uint256 minDepositPeriod;
         uint256 lastDepositTime;
+        uint256 liquidateAllBuffer;
     }
 
     uint256 internal constant basisOne = 10000;
     uint internal etaCached;
 
-    IBalancerVault.FundManagement funds = IBalancerVault.FundManagement(address(this), false, address(this), false);
+    IBalancerVault.FundManagement internal funds = IBalancerVault.FundManagement(address(this), false, address(this), false);
 
     constructor(
         address _vault,
@@ -123,8 +123,7 @@ contract Strategy is BaseStrategy {
         poolParams.maxSlippageOut = _maxSlippageOut;
         poolParams.maxSingleDeposit = _maxSingleDeposit.mul(10 ** uint256(ERC20(address(want)).decimals()));
         poolParams.minDepositPeriod = _minDepositPeriod;
-        poolParams.liquidateAllBuffer = 3;
-        poolParams.collectFeesOverwrite = 0;
+        poolParams.liquidateAllBuffer = 9900;
         want.safeApprove(address(poolData.balancerVault), max);
     }
 
@@ -139,23 +138,10 @@ contract Strategy is BaseStrategy {
         return etaCached;
     }
 
-    // There is no way to calculate the total asset without doing a tx call.
+    /// There is no way to calculate the total asset without sending a txn.
     function estimateTotalAssets() public returns (uint256 _wants) {
         etaCached = balanceOfWant().add(balanceOfPooled());
         return etaCached;
-    }
-
-    function testPrepare1() external returns (uint){
-        uint256 total = estimateTotalAssets();
-        uint256 debt = vault.strategies(address(this)).totalDebt;
-        uint toCollect = total > debt ? total.sub(debt) : 0;
-
-        uint256 beforeWant = balanceOfWant();
-        return toCollect;
-    }
-
-    function testAdjust() external {
-        adjustPosition(0);
     }
 
     function prepareReturn(uint256 _debtOutstanding) internal override returns (uint256 _profit, uint256 _loss, uint256 _debtPayment){
@@ -185,8 +171,6 @@ contract Strategy is BaseStrategy {
         }
     }
 
-    event Debug(string msg, uint value);
-
     function adjustPosition(uint256 _debtOutstanding) internal override {
         if (now - poolParams.lastDepositTime < poolParams.minDepositPeriod) {
             return;
@@ -207,18 +191,12 @@ contract Strategy is BaseStrategy {
         }
     }
 
-    function liquidate(uint256 _amountNeeded) external returns (uint256 _liquidatedAmount, uint256 _loss){
-        return liquidatePosition(_amountNeeded);
-    }
-
     function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _liquidatedAmount, uint256 _loss){
-        emit Debug("_amountNeeded", _amountNeeded);
         uint estimate = estimateTotalAssets();
-        emit Debug("estimate", estimate);
 
         // overshoot by (100-x)% to be safe as the estimation from bpt to want isn't super accurate.
         // This means that if an exit asks for x% of pooled, it'll exit everything to better ensure withdraw succeeds
-        if (estimate.mul(poolParams.liquidateAllBuffer).div(100) < _amountNeeded) {
+        if (estimate.mul(poolParams.liquidateAllBuffer).div(basisOne) < _amountNeeded) {
             _liquidatedAmount = liquidateAllPositions();
             return (_liquidatedAmount, _amountNeeded.sub(_liquidatedAmount));
         }
@@ -307,13 +285,8 @@ contract Strategy is BaseStrategy {
         }
     }
 
-    function collectTradingFees(uint _profit) external onlyVaultManagers {
-        _collectTradingFees(_profit);
-    }
-
-
     function _collectTradingFees(uint _profit) internal {
-        if (vault.strategies(address(this)).debtRatio == 0 || emergencyExit) {
+        if (vault.strategies(address(this)).debtRatio == 0 || emergencyExit || balanceOfBpt() == 0) {
             return;
         }
         _swap(_profit, IBalancerVault.SwapKind.GIVEN_OUT, address(want), poolData.lpt, address(poolData.bpt), poolData.bpt, false);
@@ -353,7 +326,7 @@ contract Strategy is BaseStrategy {
         return totalWantPooled;
     }
 
-    // Using a struct here to prevent stack too deep error
+    /// Using a struct here to prevent stack too deep error
     struct StackHelper {
         uint8 assetsIndex;
         uint8 swapsIndex;
@@ -361,19 +334,17 @@ contract Strategy is BaseStrategy {
         bool givenIn;
     }
 
-
+    /// Provide more flexibility during emergencies
     function swap(uint _amount, IBalancerVault.SwapKind _swapKind, address _swap1Token, IBalancerPool _swap1Pool, address _swap2Token, IBalancerPool _swap2Pool, bool _mock) external onlyVaultManagers returns (int256[] memory _changes){
         return _swap(_amount, _swapKind, _swap1Token, _swap1Pool, _swap2Token, _swap2Pool, false);
     }
 
-    // In swaps of the type given_in you're pushing a token into a pipeline and getting another one at the end.
-    // At each step along the way, the output of a swap becomes input of the next.
-    // @param _amount = amount sent to pool to trade
-    //
-    // In swaps of the type given_out you're pulling a token from a pipeline; the last step pulls some other token from your own account.
-    // At each step along the way, the tokens that will go into a swap will be the ones that come out of the next.
-    // @param _amount = amount desired to be returned by pool
-    //
+    /// In swaps of the type given_in you're pushing a token into a pipeline and getting another one at the end.
+    /// At each step along the way, the output of a swap becomes input of the next.
+    /// @param _amount = amount sent to pool to trade
+    /// In swaps of the type given_out you're pulling a token from a pipeline; the last step pulls some other token from your own account.
+    /// At each step along the way, the tokens that will go into a swap will be the ones that come out of the next.
+    /// @param _amount = amount desired to be returned by pool
     function _swap(uint _amount, IBalancerVault.SwapKind _swapKind, address _swap1Token, IBalancerPool _swap1Pool, address _swap2Token, IBalancerPool _swap2Pool, bool _mock) internal returns (int256[] memory _changes){
         if (_amount > 0) {
             StackHelper memory sh;
@@ -401,7 +372,6 @@ contract Strategy is BaseStrategy {
                 sh.isSame ? _amount : 0,
                 abi.encode(0));
 
-
             int[] memory limits = new int[](sh.isSame ? 2 : 3);
             limits[sh.givenIn ? 0 : 2] = int(sh.givenIn ? _amount : IERC20(_swap2Token).balanceOf(address(this)));
 
@@ -413,7 +383,7 @@ contract Strategy is BaseStrategy {
         }
     }
 
-    // for partnership rewards like Lido or airdrops
+    /// for partnership rewards like Lido or airdrops
     function whitelistRewards(address _rewardToken, SwapSteps memory _steps) public onlyVaultManagers {
         IERC20 token = IERC20(_rewardToken);
         token.approve(address(poolData.balancerVault), max);
@@ -434,22 +404,25 @@ contract Strategy is BaseStrategy {
         return rewardTokens.length;
     }
 
-    /// @param maxSlippageIn in bips
-    /// @param maxSlippageOut in bips
-    /// @param maxSingleDeposit decimal agnostic (enter 100 for 100 tokens)
-    /// @param minDepositPeriod in seconds
-    function setParams(uint256 maxSlippageIn, uint256 maxSlippageOut, uint256 maxSingleDeposit, uint256 minDepositPeriod, uint8 _liquidateAllBuffer) public onlyVaultManagers {
-        require(maxSlippageIn <= basisOne, "in too high");
-        poolParams.maxSlippageIn = maxSlippageIn;
+    /// @param _maxSlippageIn in bips
+    /// @param _maxSlippageOut in bips
+    /// @param _maxSingleDeposit decimal agnostic (enter 100 for 100 tokens)
+    /// @param _minDepositPeriod in seconds
+    /// @param _liquidateAllBuffer in bips. % of eta to trigger liquidateAll
+    function setParams(uint256 _maxSlippageIn, uint256 _maxSlippageOut, uint256 _maxSingleDeposit, uint256 _minDepositPeriod, uint256 _liquidateAllBuffer) public onlyVaultManagers {
+        require(_maxSlippageIn <= basisOne, "in too high");
+        poolParams.maxSlippageIn = _maxSlippageIn;
 
-        require(maxSlippageOut <= basisOne, "out too high");
-        poolParams.maxSlippageOut = maxSlippageOut;
+        require(_maxSlippageOut <= basisOne, "out too high");
+        poolParams.maxSlippageOut = _maxSlippageOut;
 
-        poolParams.maxSingleDeposit = maxSingleDeposit.mul(10 ** uint256(ERC20(address(want)).decimals()));
-        poolParams.minDepositPeriod = minDepositPeriod;
+        poolParams.maxSingleDeposit = _maxSingleDeposit;
+        poolParams.minDepositPeriod = _minDepositPeriod;
+
+        poolParams.liquidateAllBuffer = _liquidateAllBuffer;
     }
 
-    // enforce that amount exited didn't slip beyond our tolerance
+    /// enforce that amount exited didn't slip beyond our tolerance
     function _enforceSlippageOut(uint _intended, uint _actual) internal {
         uint256 exitSlipped = _intended > _actual ? _intended.sub(_actual) : 0;
         uint256 maxLoss = _intended.mul(poolParams.maxSlippageOut).div(basisOne);

@@ -19,7 +19,7 @@ def test_migration(
     token.approve(vault.address, amount, {"from": user})
     vault.deposit(amount, {"from": user})
     chain.sleep(1)
-    strategy.harvest()
+    strategy.harvest({"from": gov})
     assert pytest.approx(strategy.estimateTotalAssets({"from": user}).return_value, rel=RELATIVE_APPROX) == amount
 
     # migrate to a new strategy

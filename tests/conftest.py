@@ -1,5 +1,5 @@
 import pytest
-from brownie import config
+from brownie import config, chain
 from brownie import Contract
 
 
@@ -75,7 +75,7 @@ def token_whale(accounts):
     return accounts.at("0x0A59649758aa4d66E25f08Dd01271e891fe52199", force=True)
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def amount(accounts, token, user, token_whale):
     amount = 5_000_000 * 10 ** token.decimals()
     # In order to get some funds for the token you are about to use,
@@ -83,7 +83,7 @@ def amount(accounts, token, user, token_whale):
     yield amount
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def amount2(accounts, token2, user):
     amount = 5_000_000 * 10 ** token2.decimals()
     # In order to get some funds for the token you are about to use,
@@ -138,7 +138,7 @@ def weth_amout(user, weth):
     yield weth_amout
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def vault(pm, gov, rewards, guardian, management, token):
     Vault = pm(config["dependencies"][0]).Vault
     vault = guardian.deploy(Vault)
@@ -208,21 +208,23 @@ def swapStepsLdo2(ldoWethPoolId, wethToken2PoolId, ldo, weth, token2):
     yield ([ldoWethPoolId, wethToken2PoolId], [ldo, weth, token2])
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def strategyFactory(strategist, vault, StrategyFactory, balancer_vault, pool):
     factory = strategist.deploy(StrategyFactory, vault, balancer_vault, pool, 5, 5, 1_000_000, 2 * 60 * 60)
     yield factory
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def strategy(strategist, strategyFactory, keeper, vault, Strategy, gov, balancer_vault, pool, bal, ldo, management, swapStepsBal,
              swapStepsLdo):
     strategy = Strategy.at(strategyFactory.original())
     strategy.setKeeper(keeper, {'from': gov})
     strategy.whitelistRewards(bal, swapStepsBal, {'from': gov})
     strategy.whitelistRewards(ldo, swapStepsLdo, {'from': gov})
+    strategy.setDoHealthCheck(True, {'from': gov})
     vault.addStrategy(strategy, 10_000, 0, 2 ** 256 - 1, 1_000, {"from": gov})
     vault.setManagementFee(0, {'from': gov})
+    chain.sleep(1)
     yield strategy
 
 
