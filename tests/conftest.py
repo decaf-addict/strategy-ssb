@@ -1,5 +1,5 @@
 import pytest
-from brownie import config
+from brownie import config, chain
 from brownie import Contract
 
 
@@ -221,6 +221,7 @@ def strategy(strategist, keeper, vault, Strategy, gov, balancer_vault, pool, bal
     strategy.whitelistRewards(bal, swapStepsBal, {'from': gov})
     strategy.whitelistRewards(ldo, swapStepsLdo, {'from': gov})
     vault.addStrategy(strategy, 10_000, 0, 2 ** 256 - 1, 1_000, {"from": gov})
+    chain.sleep(1)
     yield strategy
 
 
