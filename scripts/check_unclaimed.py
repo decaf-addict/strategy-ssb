@@ -22,5 +22,4 @@ def main():
     for strat in strats:
         for i in range(59, nextId):
             claimed = merkleOrchard.isClaimed(bal, bal_distributor, i, strat)
-            if not claimed:
-                print(f'{strat} id: {i}')
+            print(f'{strat} id: {i} {claimed}')
