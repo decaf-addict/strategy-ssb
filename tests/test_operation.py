@@ -158,9 +158,15 @@ def test_change_debt(
     vault.updateStrategyDebtRatio(strategy.address, 0, {"from": gov})
     chain.sleep(1)
 
+
+    util.simulate_trading_fees_profit(strategy)
+    util.stateOfStrat("after trading fee", strategy, token)
+
     strategy.harvest({"from": strategist})
     util.stateOfStrat("after harvest", strategy, token)
-
+    # assert that all funds have been exited out, including trading fee profits
+    strategy.estimateTotalAssets({"from": strategist})
+    assert strategy.estimatedTotalAssets() == 0
     assert token.balanceOf(vault.address) >= amount or pytest.approx(token.balanceOf(vault.address),
                                                                      rel=RELATIVE_APPROX) >= amount
 

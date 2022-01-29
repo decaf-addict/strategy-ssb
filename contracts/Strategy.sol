@@ -156,12 +156,18 @@ contract Strategy is BaseStrategy {
         uint256 beforeWant = balanceOfWant();
 
         // 2 forms of profit. Incentivized rewards (BAL+other) and pool fees (want)
-        _collectTradingFees(toCollect);
+        if (vault.strategies(address(this)).debtRatio == 0 || emergencyExit || balanceOfBpt() == 0) {
+            // this ensures everything exits out as profit when shutting down
+            _profit = beforeWant > debt ? beforeWant.sub(debt) : 0;
+        } else {
+            // toCollect overestimates sometimes, leading to a revert here if there actually isn't enough to collect
+            _collectTradingFees(toCollect);
+        }
         _sellRewards();
 
         uint256 afterWant = balanceOfWant();
 
-        _profit = afterWant.sub(beforeWant);
+        _profit += afterWant.sub(beforeWant);
         if (_profit > _loss) {
             _profit = _profit.sub(_loss);
             _loss = 0;
@@ -286,9 +292,6 @@ contract Strategy is BaseStrategy {
     }
 
     function _collectTradingFees(uint _profit) internal {
-        if (vault.strategies(address(this)).debtRatio == 0 || emergencyExit || balanceOfBpt() == 0) {
-            return;
-        }
         _swap(_profit, IBalancerVault.SwapKind.GIVEN_OUT, address(want), poolData.lpt, address(poolData.bpt), poolData.bpt, false);
     }
 
