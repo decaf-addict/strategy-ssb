@@ -3,7 +3,7 @@ import pytest
 
 
 def test_vault_shutdown_can_withdraw(
-        chain, token, vault, strategy, user, amount, RELATIVE_APPROX
+        chain, token, vault, strategy, user, amount, RELATIVE_APPROX, gov
 ):
     ## Deposit in Vault
     token.approve(vault.address, amount, {"from": user})
@@ -14,7 +14,8 @@ def test_vault_shutdown_can_withdraw(
         token.transfer(ZERO_ADDRESS, token.balanceOf(user), {"from": user})
 
     # Harvest 1: Send funds through the strategy
-    strategy.harvest()
+    strategy.harvest({"from": gov})
+
     chain.sleep(3600 * 7)
     chain.mine(1)
     assert pytest.approx(strategy.estimateTotalAssets({'from': user}).return_value, rel=RELATIVE_APPROX) == amount
@@ -29,16 +30,16 @@ def test_vault_shutdown_can_withdraw(
 
 
 def test_basic_shutdown(
-        chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX
+        chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, gov
 ):
-    # Deposit to the vault
+    ## Deposit in Vault
     token.approve(vault.address, amount, {"from": user})
     vault.deposit(amount, {"from": user})
     assert token.balanceOf(vault.address) == amount
 
     # Harvest 1: Send funds through the strategy
-    strategy.harvest()
-    chain.mine(100)
+    strategy.harvest({"from": gov})
+    chain.mine(1)
     assert pytest.approx(strategy.estimateTotalAssets({'from': user}).return_value, rel=RELATIVE_APPROX) == amount
 
     ## Earn interest
@@ -46,14 +47,14 @@ def test_basic_shutdown(
     chain.mine(1)
 
     # Harvest 2: Realize profit
-    strategy.harvest()
+    strategy.harvest({"from": gov})
     chain.sleep(3600 * 6)  # 6 hrs needed for profits to unlock
     chain.mine(1)
 
     ## Set emergency
     strategy.setEmergencyExit({"from": strategist})
 
-    strategy.harvest()  ## Remove funds from strategy
+    strategy.harvest({"from": gov})  ## Remove funds from strategy
 
     assert token.balanceOf(strategy) == 0
     assert pytest.approx(token.balanceOf(vault), rel=RELATIVE_APPROX) == amount
