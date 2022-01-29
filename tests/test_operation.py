@@ -158,7 +158,6 @@ def test_change_debt(
     vault.updateStrategyDebtRatio(strategy.address, 0, {"from": gov})
     chain.sleep(1)
 
-
     util.simulate_trading_fees_profit(strategy)
     util.stateOfStrat("after trading fee", strategy, token)
 

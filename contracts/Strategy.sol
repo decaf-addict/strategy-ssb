@@ -157,7 +157,7 @@ contract Strategy is BaseStrategy {
 
         // 2 forms of profit. Incentivized rewards (BAL+other) and pool fees (want)
         if (vault.strategies(address(this)).debtRatio == 0 || emergencyExit || balanceOfBpt() == 0) {
-            // this ensures everything exits out as profit when shutting down
+            // this captures all additional profits when shutting down
             _profit = beforeWant > debt ? beforeWant.sub(debt) : 0;
         } else {
             // toCollect overestimates sometimes, leading to a revert here if there actually isn't enough to collect
@@ -203,7 +203,7 @@ contract Strategy is BaseStrategy {
         // overshoot by (100-x)% to be safe as the estimation from bpt to want isn't super accurate.
         // This means that if an exit asks for x% of pooled, it'll exit everything to better ensure withdraw succeeds
         if (estimate.mul(poolParams.liquidateAllBuffer).div(basisOne) < _amountNeeded) {
-            _liquidatedAmount = liquidateAllPositions();
+            _liquidatedAmount = Math.min(liquidateAllPositions(), _amountNeeded);
             return (_liquidatedAmount, _amountNeeded.sub(_liquidatedAmount));
         }
 
