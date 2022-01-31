@@ -50,7 +50,7 @@ def token():
     # 0xdAC17F958D2ee523a2206206994597C13D831ec7 USDT
     # 0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0 wSTETH
     # 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 WETH
-    token_address = "0x6B175474E89094C44Da98b954EedeAC495271d0F"
+    token_address = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
     yield Contract(token_address)
 
 
@@ -61,7 +61,7 @@ def token2():
     # 0xdAC17F958D2ee523a2206206994597C13D831ec7 USDT
     # 0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0 wSTETH
     # 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 WETH
-    token_address = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+    token_address = "0x6B175474E89094C44Da98b954EedeAC495271d0F"
     yield Contract(token_address)
 
 
@@ -72,7 +72,7 @@ def token_whale(accounts):
     # 0xA929022c9107643515F5c777cE9a910F0D1e490C USDT
     # 0xba12222222228d8ba445958a75a0704d566bf2c8 wSTETH
     # 0x2F0b23f53734252Bda2277357e97e1517d6B042A WETH
-    return accounts.at("0x5d3a536E4D6DbD6114cc1Ead35777bAB948E3643", force=True)
+    return accounts.at("0x0A59649758aa4d66E25f08Dd01271e891fe52199", force=True)
 
 
 @pytest.fixture
@@ -88,7 +88,7 @@ def token2_whale(accounts):
     # 0x5d3a536E4D6DbD6114cc1Ead35777bAB948E3643 DAI
     # 0x0A59649758aa4d66E25f08Dd01271e891fe52199 USDC
     # 0xA929022c9107643515F5c777cE9a910F0D1e490C USDT
-    reserve = accounts.at("0x0A59649758aa4d66E25f08Dd01271e891fe52199", force=True)
+    reserve = accounts.at("0x5d3a536E4D6DbD6114cc1Ead35777bAB948E3643", force=True)
     return reserve
 
 @pytest.fixture
@@ -185,17 +185,17 @@ def balWethPoolId():
 
 @pytest.fixture
 def wethTokenPoolId():
-    id = 0x0b09dea16768f0799065c475be02919503cb2a3500020000000000000000001a  # weth-dai
-    yield id
-
-@pytest.fixture
-def wethToken2PoolId():
     id = 0x96646936b91d6b9d7d0c47c496afbf3d6ec7b6f8000200000000000000000019  # weth-usdc
     yield id
 
 @pytest.fixture
+def wethToken2PoolId():
+    id = 0x0b09dea16768f0799065c475be02919503cb2a3500020000000000000000001a  # weth-dai
+    yield id
+
+@pytest.fixture
 def ldoWethPoolId():
-    id = 0xbf96189eee9357a95c7719f4f5047f76bde804e5000200000000000000000087  # weth-dai
+    id = 0xbf96189eee9357a95c7719f4f5047f76bde804e5000200000000000000000087  # ldo-weth
     yield id
 
 

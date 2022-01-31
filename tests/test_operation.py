@@ -261,7 +261,7 @@ def test_unbalanced_pool_withdraw(chain, token, vault, strategy, user, strategis
 
     print(f'user withdraw 5m')
     # withdraw half to see how much we get back, it should be lossy. Assert that our slippage check prevents this
-    with brownie.reverts("Exceeded maxSlippageOu"):
+    with brownie.reverts():
         vault.withdraw(vault.balanceOf(user) / 2, user, 10000, {"from": user})
 
     # loosen the slippage check to let the lossy withdraw go through
