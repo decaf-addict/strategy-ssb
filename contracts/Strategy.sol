@@ -176,6 +176,7 @@ contract Strategy is BaseStrategy {
         uint256 afterWant = balanceOfWant();
 
         _profit = afterWant.sub(beforeWant);
+        // TODO: fish's comment
         if (_profit > _loss) {
             _profit = _profit.sub(_loss);
             _loss = 0;
@@ -234,6 +235,8 @@ contract Strategy is BaseStrategy {
         _sellBpt(balanceOfBpt());
 
         liquidated = balanceOfWant();
+
+        // compare expected principal (totalDebt) to total liquidated given currently pool condition
         _enforceSlippageOut(totalDebt, liquidated);
         return liquidated;
     }
@@ -330,12 +333,13 @@ contract Strategy is BaseStrategy {
         return bptsToTokens(balanceOfBpt());
     }
 
+    /// use bpt rate to estimate equivalent amount of want.
     function bptsToTokens(uint _amountBpt) public view returns (uint _amount){
         uint unscaled = _amountBpt * bpt.getRate() / 1e18;
         return _scaleDecimals(unscaled, ERC20(address(bpt)), ERC20(address(want)));
     }
 
-    // uses virtual price of bpt.
+
     function tokensToBpts(uint _amountTokens) public view returns (uint _amount){
         uint unscaled = _amountTokens * 1e18 / bpt.getRate();
         return _scaleDecimals(unscaled, ERC20(address(want)), ERC20(address(bpt)));
@@ -364,6 +368,7 @@ contract Strategy is BaseStrategy {
         _sellBpt(_amountBpts);
     }
 
+    // sell bpt for want at current bpt rate
     function _sellBpt(uint256 _amountBpts) internal {
         if (_amountBpts > 0) {
             bytes memory userData = abi.encode(IBalancerVault.ExitKind.EXACT_BPT_IN_FOR_ONE_TOKEN_OUT, Math.min(_amountBpts, balanceOfBpt()), tokenIndex);
