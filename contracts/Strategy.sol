@@ -176,14 +176,18 @@ contract Strategy is BaseStrategy {
         uint256 afterWant = balanceOfWant();
 
         _profit = afterWant.sub(beforeWant);
-        // TODO: fish's comment
         if (_profit > _loss) {
             _profit = _profit.sub(_loss);
+            _debtPayment += _loss;
             _loss = 0;
         } else {
             _loss = _loss.sub(_profit);
+            _debtPayment += _profit;
             _profit = 0;
         }
+
+        // final check to make sure accounting is correct
+        require(_debtOutstanding == _debtPayment.add(_loss));
     }
 
     function adjustPosition(uint256 _debtOutstanding) internal override {
@@ -259,12 +263,11 @@ contract Strategy is BaseStrategy {
     function tendTrigger(uint256 callCostInWei) public view override returns (bool) {
         return now.sub(lastDepositTime) > minDepositPeriod && balanceOfWant() > 0;
     }
-    
+
     // HELPERS //
     function sellRewards() external onlyVaultManagers {
         _sellRewards();
     }
-
 
     function _sellRewards() internal {
         for (uint8 i = 0; i < rewardTokens.length; i++) {
@@ -353,7 +356,7 @@ contract Strategy is BaseStrategy {
         );
     }
 
-    function sellBpt(uint256 _amountBpts) external onlyVaultManagers{
+    function sellBpt(uint256 _amountBpts) external onlyVaultManagers {
         _sellBpt(_amountBpts);
     }
 

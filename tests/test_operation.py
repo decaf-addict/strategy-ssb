@@ -193,10 +193,6 @@ def test_triggers(
     chain.sleep(1)
     strategy.harvest({"from": strategist})
 
-    assert strategy.harvestTrigger(0) == False
-    util.airdrop_rewards(strategy, bal, bal_whale, ldo, ldo_whale)
-    assert strategy.harvestTrigger(0) == True
-
     assert strategy.tendTrigger(0) == False
     chain.sleep(strategy.minDepositPeriod() + 1)
     chain.mine(1)
