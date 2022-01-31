@@ -259,23 +259,7 @@ contract Strategy is BaseStrategy {
     function tendTrigger(uint256 callCostInWei) public view override returns (bool) {
         return now.sub(lastDepositTime) > minDepositPeriod && balanceOfWant() > 0;
     }
-
-    function harvestTrigger(uint256 callCostInWei) public view override returns (bool){
-        bool hasRewards;
-        uint decWant = ERC20(address(want)).decimals();
-        for (uint8 i = 0; i < rewardTokens.length; i++) {
-            ERC20 rewardToken = ERC20(address(rewardTokens[i]));
-
-            uint decReward = rewardToken.decimals();
-            if (rewardToken.balanceOf(address(this)) > 10 ** (decReward > decWant ? decReward.sub(decWant) : 0)) {
-                hasRewards = true;
-                break;
-            }
-        }
-        return super.harvestTrigger(callCostInWei) && hasRewards;
-    }
-
-
+    
     // HELPERS //
     function sellRewards() external onlyVaultManagers {
         _sellRewards();
