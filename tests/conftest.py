@@ -82,16 +82,19 @@ def amount(accounts, token, user, token_whale):
     token.transfer(user, amount, {"from": token_whale})
     yield amount
 
-
 @pytest.fixture
-def amount2(accounts, token2, user):
-    amount = 1_000_000 * 10 ** token2.decimals()
+def token2_whale(accounts):
     # In order to get some funds for the token you are about to use,
     # 0x5d3a536E4D6DbD6114cc1Ead35777bAB948E3643 DAI
     # 0x0A59649758aa4d66E25f08Dd01271e891fe52199 USDC
     # 0xA929022c9107643515F5c777cE9a910F0D1e490C USDT
     reserve = accounts.at("0x0A59649758aa4d66E25f08Dd01271e891fe52199", force=True)
-    token2.transfer(user, amount, {"from": reserve})
+    return reserve
+
+@pytest.fixture
+def amount2(accounts, token2, user, token2_whale):
+    amount = 1_000_000 * 10 ** token2.decimals()
+    token2.transfer(user, amount, {"from": token2_whale})
     yield amount
 
 

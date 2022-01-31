@@ -72,7 +72,7 @@ def test_profitable_harvest(
 
 
 def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, bal, bal_whale,
-                     ldo, gov,
+                     ldo, gov, pool,
                      ldo_whale):
     # Deposit to the vault
     token.approve(vault.address, amount, {"from": user})
@@ -81,6 +81,7 @@ def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RE
 
     # Harvest 1: Send funds through the strategy
     chain.sleep(1)
+
     strategy.harvest({"from": strategist})
     assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount
 
@@ -114,7 +115,7 @@ def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RE
 
     half = int(amount / 2)
     # profits
-    assert strategy.estimatedTotalAssets() >= half - slippageIn/2
+    assert strategy.estimatedTotalAssets() >= half - slippageIn / 2
 
 
 def test_change_debt(
@@ -209,3 +210,63 @@ def test_rewards(
     assert strategy.numRewards() == 2
     strategy.delistAllRewards({'from': gov})
     assert strategy.numRewards() == 0
+
+
+def test_unbalanced_pool_withdraw(chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, bal,
+                                  bal_whale, token2_whale, token2,
+                                  ldo, gov, pool, balancer_vault):
+    # Deposit to the vault
+    token.approve(vault.address, amount, {"from": user})
+    vault.deposit(amount, {"from": user})
+    assert token.balanceOf(vault.address) == amount
+
+    # Harvest 1: Send funds through the strategy
+    chain.sleep(1)
+    print(f'pool rate: {pool.getRate()}')
+
+    strategy.harvest({"from": strategist})
+    assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount
+
+    chain.sleep(strategy.minDepositPeriod() + 1)
+    chain.mine(1)
+    while strategy.tendTrigger(0) == True:
+        strategy.tend({'from': gov})
+        util.stateOfStrat("tend", strategy, token)
+        assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount
+        chain.sleep(strategy.minDepositPeriod() + 1)
+        chain.mine(1)
+
+    print(f'pool rate: {pool.getRate()}')
+
+    print(f'swap 20m')
+    tokens = balancer_vault.getPoolTokens(pool.getPoolId())[0]
+    token2Index = 0
+    if (tokens[0] == token2):
+        token2Index = 0
+    elif tokens[1] == token2:
+        token2Index = 1
+    elif tokens[2] == token2:
+        token2Index = 2
+
+    pooled = balancer_vault.getPoolTokens(pool.getPoolId())[1][strategy.tokenIndex()]
+    print(balancer_vault.getPoolTokens(pool.getPoolId()))
+    print(f'pooled: {pooled}')
+    token2.approve(balancer_vault, 2 ** 256 - 1, {'from': token2_whale})
+
+    singleSwap = (pool.getPoolId(), 1, token2, token, pooled * 0.9, b'0x0')
+    balancer_vault.swap(singleSwap, (token2_whale, False, token2_whale, False), token2.balanceOf(token2_whale),
+                        chain.time(), {'from': token2_whale})
+    print(balancer_vault.getPoolTokens(pool.getPoolId()))
+    print(f'pool rate: {pool.getRate()}')
+
+    print(f'user withdraw 5m')
+    # withdraw half to see how much we get back, it should be lossy. Assert that our slippage check prevents this
+    with brownie.reverts("Exceeded maxSlippageOu"):
+        vault.withdraw(vault.balanceOf(user) / 2, user, 10000, {"from": user})
+
+    # loosen the slippage check to let the lossy withdraw go through
+    strategy.setParams(10000, 10000, strategy.maxSingleDeposit(), strategy.minDepositPeriod(), {'from': gov})
+    vault.withdraw(vault.balanceOf(user) / 2, user, 10000, {"from": user})
+    print(f'user balance: {token.balanceOf(user)}')
+    print(f'user lost: {amount / 2 - token.balanceOf(user)}')
+    util.stateOfStrat("after lossy withdraw", strategy, token)
