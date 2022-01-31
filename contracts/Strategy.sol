@@ -171,7 +171,7 @@ contract Strategy is BaseStrategy {
 
         // 2 forms of profit. Incentivized rewards (BAL+other) and pool fees (want)
         collectTradingFees();
-        sellRewards();
+        _sellRewards();
 
         uint256 afterWant = balanceOfWant();
 
@@ -277,7 +277,12 @@ contract Strategy is BaseStrategy {
 
 
     // HELPERS //
-    function sellRewards() internal {
+    function sellRewards() external onlyVaultManagers {
+        _sellRewards();
+    }
+
+
+    function _sellRewards() internal {
         for (uint8 i = 0; i < rewardTokens.length; i++) {
             ERC20 rewardToken = ERC20(address(rewardTokens[i]));
             uint256 amount = rewardToken.balanceOf(address(this));
@@ -364,7 +369,7 @@ contract Strategy is BaseStrategy {
         );
     }
 
-    function sellBpt(uint256 _amountBpts) external {
+    function sellBpt(uint256 _amountBpts) external onlyVaultManagers{
         _sellBpt(_amountBpts);
     }
 
