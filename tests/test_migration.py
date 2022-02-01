@@ -66,5 +66,4 @@ def test_real_migration(
 
     # hopefully the gains from trading fees cancels out slippage
     print(f'net loss from exit: {vault.strategies(fixed_strategy)["totalLoss"]}')
-    assert False
     assert fixed_strategy.estimatedTotalAssets() == 0
