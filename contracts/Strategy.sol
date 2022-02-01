@@ -29,10 +29,16 @@ contract Strategy is BaseStrategy {
     bytes32 public balancerPoolId;
     uint8 public numTokens;
     uint8 public tokenIndex;
+    Toggles public toggles;
 
     struct SwapSteps {
         bytes32[] poolIds;
         IAsset[] assets;
+    }
+
+    struct Toggles {
+        bool checkDebtOutstanding;
+        bool doSellRewards;
     }
 
     uint256 internal constant max = type(uint256).max;
@@ -114,6 +120,8 @@ contract Strategy is BaseStrategy {
         minDepositPeriod = _minDepositPeriod;
 
         want.safeApprove(address(balancerVault), max);
+
+        toggles = Toggles({checkDebtOutstanding: true, doSellRewards: true});
     }
 
     event Cloned(address indexed clone);
@@ -171,7 +179,10 @@ contract Strategy is BaseStrategy {
 
         // 2 forms of profit. Incentivized rewards (BAL+other) and pool fees (want)
         collectTradingFees();
-        _sellRewards();
+        // this would allow finer control over harvesting to get credits in without selling
+        if (toggles.doSellRewards) {
+            _sellRewards();
+        }
 
         uint256 afterWant = balanceOfWant();
 
@@ -186,8 +197,10 @@ contract Strategy is BaseStrategy {
             _profit = 0;
         }
 
-        // final check to make sure accounting is correct
-        require(_debtOutstanding == _debtPayment.add(_loss));
+        if (toggles.checkDebtOutstanding) {
+            // final check to make sure accounting is correct
+            require(_debtOutstanding == _debtPayment.add(_loss));
+        }
     }
 
     function adjustPosition(uint256 _debtOutstanding) internal override {
@@ -399,6 +412,11 @@ contract Strategy is BaseStrategy {
 
         maxSingleDeposit = _maxSingleDeposit;
         minDepositPeriod = _minDepositPeriod;
+    }
+
+    function setToggles(bool _checkDebtOustanding, bool _doSellRewards) external onlyVaultManagers {
+        toggles.checkDebtOutstanding = _checkDebtOustanding;
+        toggles.doSellRewards = _doSellRewards;
     }
 
     function _enforceSlippageOut(uint _intended, uint _actual) internal {
