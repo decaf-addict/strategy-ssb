@@ -244,6 +244,7 @@ def test_unbalanced_pool_withdraw(chain, token, vault, strategy, user, strategis
     elif tokens[2] == token2:
         token2Index = 2
 
+    util.stateOfStrat("after deposit all    ", strategy, token)
     pooled = balancer_vault.getPoolTokens(pool.getPoolId())[1][strategy.tokenIndex()]
     print(balancer_vault.getPoolTokens(pool.getPoolId()))
     print(f'pooled: {pooled}')
@@ -259,10 +260,13 @@ def test_unbalanced_pool_withdraw(chain, token, vault, strategy, user, strategis
     # withdraw half to see how much we get back, it should be lossy. Assert that our slippage check prevents this
     with brownie.reverts():
         vault.withdraw(vault.balanceOf(user) / 2, user, 10000, {"from": user})
-
+    old_slippage = strategy.maxSlippageOut()
     # loosen the slippage check to let the lossy withdraw go through
     strategy.setParams(10000, 10000, strategy.maxSingleDeposit(), strategy.minDepositPeriod(), {'from': gov})
     vault.withdraw(vault.balanceOf(user) / 2, user, 10000, {"from": user})
     print(f'user balance: {token.balanceOf(user)}')
     print(f'user lost: {amount / 2 - token.balanceOf(user)}')
     util.stateOfStrat("after lossy withdraw", strategy, token)
+
+    # make sure principal is still as expected
+    assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) >= amount / 2 *(10000 - old_slippage)
