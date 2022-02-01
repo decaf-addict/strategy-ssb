@@ -25,7 +25,6 @@ contract Strategy is BaseStrategy {
     IERC20[] public rewardTokens;
     IAsset[] internal assets;
     SwapSteps[] internal swapSteps;
-    uint256[] internal minAmountsOut;
     bytes32 public balancerPoolId;
     uint8 public numTokens;
     uint8 public tokenIndex;
@@ -116,12 +115,11 @@ contract Strategy is BaseStrategy {
         maxSlippageIn = _maxSlippageIn;
         maxSlippageOut = _maxSlippageOut;
         maxSingleDeposit = _maxSingleDeposit.mul(10 ** uint256(ERC20(address(want)).decimals()));
-        minAmountsOut = new uint256[](numTokens);
         minDepositPeriod = _minDepositPeriod;
 
         want.safeApprove(address(balancerVault), max);
 
-        toggles = Toggles({checkDebtOutstanding: true, doSellRewards: true});
+        toggles = Toggles({checkDebtOutstanding : true, doSellRewards : true});
     }
 
     event Cloned(address indexed clone);
@@ -240,8 +238,6 @@ contract Strategy is BaseStrategy {
 
             _liquidatedAmount = Math.min(balanceOfWant(), _amountNeeded);
             _loss = _amountNeeded.sub(_liquidatedAmount);
-
-            _enforceSlippageOut(toExitAmount, _liquidatedAmount.sub(looseAmount));
         } else {
             _liquidatedAmount = _amountNeeded;
         }
@@ -250,11 +246,7 @@ contract Strategy is BaseStrategy {
     function liquidateAllPositions() internal override returns (uint256 liquidated) {
         uint totalDebt = vault.strategies(address(this)).totalDebt;
         _sellBpt(balanceOfBpt());
-
         liquidated = balanceOfWant();
-
-        // compare expected principal (totalDebt) to total liquidated given currently pool condition
-        _enforceSlippageOut(totalDebt, liquidated);
         return liquidated;
     }
 
@@ -376,6 +368,8 @@ contract Strategy is BaseStrategy {
     // sell bpt for want at current bpt rate
     function _sellBpt(uint256 _amountBpts) internal {
         if (_amountBpts > 0) {
+            uint256[] memory minAmountsOut = new uint256[](numTokens);
+            minAmountsOut[tokenIndex] = bptsToTokens(_amountBpts).mul(basisOne.sub(maxSlippageOut)).div(basisOne);
             bytes memory userData = abi.encode(IBalancerVault.ExitKind.EXACT_BPT_IN_FOR_ONE_TOKEN_OUT, Math.min(_amountBpts, balanceOfBpt()), tokenIndex);
             IBalancerVault.ExitPoolRequest memory request = IBalancerVault.ExitPoolRequest(assets, minAmountsOut, userData, false);
             balancerVault.exitPool(balancerPoolId, address(this), address(this), request);
@@ -417,14 +411,6 @@ contract Strategy is BaseStrategy {
     function setToggles(bool _checkDebtOustanding, bool _doSellRewards) external onlyVaultManagers {
         toggles.checkDebtOutstanding = _checkDebtOustanding;
         toggles.doSellRewards = _doSellRewards;
-    }
-
-    function _enforceSlippageOut(uint _intended, uint _actual) internal {
-        // enforce that amount exited didn't slip beyond our tolerance
-        // just in case there's positive slippage
-        uint256 exitSlipped = _intended > _actual ? _intended.sub(_actual) : 0;
-        uint256 maxLoss = _intended.mul(maxSlippageOut).div(basisOne);
-        require(exitSlipped <= maxLoss, "Exceeded maxSlippageOut!");
     }
 
     function getSwapSteps() public view returns (SwapSteps[] memory){
