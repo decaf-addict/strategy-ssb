@@ -163,6 +163,7 @@ def test_change_debt(
     chain.sleep(1)
     strategy.harvest({"from": strategist})
     assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount
+    chain.sleep(1)
 
     util.stateOfStrat("before airdrop", strategy, token)
     util.airdrop_rewards(strategy, beets, beets_whale)
@@ -172,9 +173,7 @@ def test_change_debt(
     strategy.harvest({"from": strategist})
     chain.sleep(3600 * 6)
     chain.mine(1)
-
     util.stateOfStrat("after harvest 5000", strategy, token)
-
     # compounded slippage
     assert pytest.approx(strategy.estimatedTotalAssets(),
                          rel=RELATIVE_APPROX) == half or strategy.estimatedTotalAssets() >= half

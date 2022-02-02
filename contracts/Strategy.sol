@@ -24,7 +24,6 @@ contract Strategy is BaseStrategy {
     IERC20 public rewardToken;
     IAsset[] internal assets;
     SwapSteps internal swapSteps;
-    uint256[] internal minAmountsOut;
     bytes32 public balancerPoolId;
     uint8 public numTokens;
     uint8 public tokenIndex;
@@ -85,7 +84,6 @@ contract Strategy is BaseStrategy {
         maxSlippageIn = _maxSlippageIn;
         maxSlippageOut = _maxSlippageOut;
         maxSingleDeposit = _maxSingleDeposit.mul(10 ** uint256(ERC20(address(want)).decimals()));
-        minAmountsOut = new uint256[](numTokens);
         minDepositPeriod = _minDepositPeriod;
         masterChefPoolId = _masterChefPoolId;
         masterChef = IBeethovenxMasterChef(_masterChef);
@@ -145,14 +143,10 @@ contract Strategy is BaseStrategy {
         if (joinPool(amountIn, assets, numTokens, tokenIndex, balancerPoolId)) {
             // put all want-lp into masterchef
             masterChef.deposit(masterChefPoolId, balanceOfBpt(), address(this));
+        }
     }
 
     function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _liquidatedAmount, uint256 _loss){
-        if (estimatedTotalAssets() < _amountNeeded) {
-            _liquidatedAmount = liquidateAllPositions();
-            return (_liquidatedAmount, _amountNeeded.sub(_liquidatedAmount));
-        }
-
         uint256 looseAmount = balanceOfWant();
         if (_amountNeeded > looseAmount) {
             uint256 toExitAmount = _amountNeeded.sub(looseAmount);
@@ -160,14 +154,12 @@ contract Strategy is BaseStrategy {
             // withdraw all bpt out of masterchef
             masterChef.withdrawAndHarvest(masterChefPoolId, balanceOfBptInMasterChef(), address(this));
             // sell some bpt
-            _sellBpt(tokensToBpts(toExitAmount), assets, tokenIndex, balancerPoolId, minAmountsOut, balanceOfBpt());
+            _sellBpt(tokensToBpts(toExitAmount), assets, tokenIndex, balancerPoolId, balanceOfBpt());
             // put remaining bpt back into masterchef
             masterChef.deposit(masterChefPoolId, balanceOfBpt(), address(this));
 
             _liquidatedAmount = Math.min(balanceOfWant(), _amountNeeded);
             _loss = _amountNeeded.sub(_liquidatedAmount);
-
-            _enforceSlippageOut(toExitAmount, _liquidatedAmount.sub(looseAmount));
         } else {
             _liquidatedAmount = _amountNeeded;
         }
@@ -178,11 +170,9 @@ contract Strategy is BaseStrategy {
 
         masterChef.withdrawAndHarvest(masterChefPoolId, balanceOfBptInMasterChef(), address(this));
         // sell all bpt
-        _sellBpt(balanceOfBpt(), assets, tokenIndex, balancerPoolId, minAmountsOut, balanceOfBpt());
+        _sellBpt(balanceOfBpt(), assets, tokenIndex, balancerPoolId, balanceOfBpt());
 
         liquidated = balanceOfWant();
-        _enforceSlippageOut(totalDebt, liquidated);
-
         return liquidated;
     }
 
@@ -257,7 +247,7 @@ contract Strategy is BaseStrategy {
             // withdraw all bpt out of masterchef
             masterChef.withdrawAndHarvest(masterChefPoolId, balanceOfBptInMasterChef(), address(this));
             uint256 profit = total.sub(debt);
-            _sellBpt(tokensToBpts(profit), assets, tokenIndex, balancerPoolId, minAmountsOut, balanceOfBpt());
+            _sellBpt(tokensToBpts(profit), assets, tokenIndex, balancerPoolId, balanceOfBpt());
             // put remaining bpt back into masterchef
             masterChef.deposit(masterChefPoolId, balanceOfBpt(), address(this));
         }
@@ -319,22 +309,25 @@ contract Strategy is BaseStrategy {
     }
 
     // this allows us to also sell stakedBpts externally
-    function sellBpt(uint256 _amountBpts, IAsset[] memory _assets, uint256 _tokenIndex, bytes32 _balancerPoolId, uint256[] memory _minAmountsOut, uint256 _maxBpts) external onlyVaultManagers {
-        _sellBpt(_amountBpts, _assets, _tokenIndex, _balancerPoolId, _minAmountsOut, _maxBpts);
+    function sellBpt(uint256 _amountBpts, IAsset[] memory _assets, uint256 _tokenIndex, bytes32 _balancerPoolId, uint256 _maxBpts) external onlyVaultManagers {
+        _sellBpt(_amountBpts, _assets, _tokenIndex, _balancerPoolId, _maxBpts);
     }
 
     // sell bpt for want at current bpt rate
-    function _sellBpt(uint256 _amountBpts, IAsset[] memory _assets, uint256 _tokenIndex, bytes32 _balancerPoolId, uint256[] memory _minAmountsOut, uint256 _maxBpts) internal {
+    function _sellBpt(uint256 _amountBpts, IAsset[] memory _assets, uint256 _tokenIndex, bytes32 _balancerPoolId, uint256 _maxBpts) internal {
+        _amountBpts = Math.min(_amountBpts, balanceOfBpt());
         if (_amountBpts > 0) {
-            bytes memory userData = abi.encode(IBalancerVault.ExitKind.EXACT_BPT_IN_FOR_ONE_TOKEN_OUT, Math.min(_amountBpts, _maxBpts), _tokenIndex);
-            IBalancerVault.ExitPoolRequest memory request = IBalancerVault.ExitPoolRequest(_assets, _minAmountsOut, userData, false);
+            uint256[] memory minAmountsOut = new uint256[](numTokens);
+            minAmountsOut[tokenIndex] = bptsToTokens(_amountBpts).mul(basisOne.sub(maxSlippageOut)).div(basisOne);
+            bytes memory userData = abi.encode(IBalancerVault.ExitKind.EXACT_BPT_IN_FOR_ONE_TOKEN_OUT, _amountBpts, _tokenIndex);
+            IBalancerVault.ExitPoolRequest memory request = IBalancerVault.ExitPoolRequest(_assets, minAmountsOut, userData, false);
             balancerVault.exitPool(_balancerPoolId, address(this), address(this), request);
         }
     }
 
     // join pool given exact token in
     function joinPool(uint256 _amountIn, IAsset[] memory _assets, uint256 _numTokens, uint256 _tokenIndex, bytes32 _poolId) internal returns (bool _joined){
-        uint256 expectedBptOut = tokensToBpts(amountIn).mul(basisOne.sub(maxSlippageIn)).div(basisOne);
+        uint256 expectedBptOut = tokensToBpts(_amountIn).mul(basisOne.sub(maxSlippageIn)).div(basisOne);
         uint256[] memory maxAmountsIn = new uint256[](_numTokens);
         maxAmountsIn[_tokenIndex] = _amountIn;
         if (_amountIn > 0) {
@@ -364,15 +357,6 @@ contract Strategy is BaseStrategy {
         minDepositPeriod = _minDepositPeriod;
     }
 
-    // revert if slippage out exceeds our requirement
-    function _enforceSlippageOut(uint _intended, uint _actual) internal view {
-        // enforce that amount exited didn't slip beyond our tolerance
-        // just in case there's positive slippage
-        uint256 exitSlipped = _intended > _actual ? _intended.sub(_actual) : 0;
-        uint256 maxLoss = _intended.mul(maxSlippageOut).div(basisOne);
-        require(exitSlipped <= maxLoss, "Slipped Out!");
-    }
-
     // swap step contains information on multihop sells
     function getSwapSteps() public view returns (SwapSteps memory){
         return swapSteps;
@@ -390,13 +374,15 @@ contract Strategy is BaseStrategy {
     // toggle for whether to abandon rewards or not on emergency withdraws from masterchef
     function setAbandonRewards(bool abandon) external onlyVaultManagers {
         abandonRewards = abandon;
+    }
 
     // Balancer requires this contract to be payable, so we add ability to sweep stuck ETH
     function sweepETH() public onlyGovernance {
-        (bool success, ) = governance().call{value: address(this).balance}("");
-        require(success,"!FailedETHSweep");
+        (bool success,) = governance().call{value : address(this).balance}("");
+        require(success, "!FailedETHSweep");
     }
 
     receive() external payable {}
 }
+
 
