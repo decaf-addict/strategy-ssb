@@ -235,7 +235,7 @@ def test_unbalanced_pool_withdraw(chain, token, vault, strategy, user, strategis
     chain.sleep(strategy.minDepositPeriod() + 1)
     chain.mine(1)
 
-    # iterate to get all the funds in 
+    # iterate to get all the funds in
     while strategy.tendTrigger(0) == True:
         strategy.tend({'from': gov})
         util.stateOfStrat("tend", strategy, token)
@@ -281,13 +281,5 @@ def test_unbalanced_pool_withdraw(chain, token, vault, strategy, user, strategis
     print(f'user lost: {amount / 2 - token.balanceOf(user)}')
     util.stateOfStrat("after lossy withdraw", strategy, token)
 
-<<<<<<< HEAD
-    # make sure principal is still as expected
-    assert strategy.estimatedTotalAssets() >= amount / 2 *(10000 - old_slippage)/10000
-
-
-    
-=======
     # make sure principal is still as expected, aka loss wasn't socialized
     assert strategy.estimatedTotalAssets() >= amount / 2 * (10000 - old_slippage) / 10000
->>>>>>> 022b44fed3b4e7360c0cf857e37a6b221d80d045
