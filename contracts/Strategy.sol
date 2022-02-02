@@ -28,6 +28,8 @@ contract Strategy is BaseStrategy {
     uint8 public numTokens;
     uint8 public tokenIndex;
     bool internal abandonRewards;
+    address public keep;
+    uint256 public keepBips;
 
     // masterchef
     IBeethovenxMasterChef public masterChef;
@@ -91,6 +93,10 @@ contract Strategy is BaseStrategy {
 
         want.safeApprove(address(balancerVault), max);
         bpt.approve(address(masterChef), max);
+
+        // 10%t to chad by default
+        keep = governance();
+        keepBips = 1000;
     }
 
     // ******** OVERRIDE THESE METHODS FROM BASE CONTRACT ************
@@ -210,7 +216,12 @@ contract Strategy is BaseStrategy {
 
     // claim all beets rewards from masterchef
     function _claimRewards() internal {
+        uint256 rewardBal = balanceOfReward();
         masterChef.harvest(masterChefPoolId, address(this));
+        uint256 keepBal = balanceOfReward().sub(rewardBal).mul(keepBips).div(basisOne);
+        if (keepBal > 0) {
+            rewardToken.transfer(keep, keepBal);
+        }
     }
 
     function _sellRewards() internal {
@@ -374,6 +385,12 @@ contract Strategy is BaseStrategy {
     // toggle for whether to abandon rewards or not on emergency withdraws from masterchef
     function setAbandonRewards(bool abandon) external onlyVaultManagers {
         abandonRewards = abandon;
+    }
+
+    function setKeepParams(address _keep, uint _keepBips) external onlyGovernance {
+        require(keepBips < basisOne);
+        keep = _keep;
+        keepBips = _keepBips;
     }
 
     // Balancer requires this contract to be payable, so we add ability to sweep stuck ETH
