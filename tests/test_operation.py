@@ -8,6 +8,7 @@ def test_operation(
         chain, accounts, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX
 ):
     # Deposit to the vault
+    print("Strategy Name:", strategy.name())
     user_balance_before = token.balanceOf(user)
     token.approve(vault.address, amount, {"from": user})
     vault.deposit(amount, {"from": user})
@@ -181,6 +182,14 @@ def test_sweep(gov, vault, strategy, token, user, amount, weth, weth_amout):
     strategy.sweep(weth, {"from": gov})
     assert weth.balanceOf(gov) == weth_amout + before_balance
 
+def test_eth_sweep(chain, token, vault, strategy, user, strategist, gov):
+    strategist.transfer(strategy,1e18)
+    with brownie.reverts():
+        strategy.sweepETH({"from": strategist})
+
+    eth_balance = gov.balance()
+    strategy.sweepETH({"from": gov})
+    assert gov.balance() > eth_balance
 
 def test_triggers(
         chain, gov, vault, strategy, token, amount, user, weth, weth_amout, strategist, bal, bal_whale, ldo, ldo_whale,
@@ -270,3 +279,6 @@ def test_unbalanced_pool_withdraw(chain, token, vault, strategy, user, strategis
 
     # make sure principal is still as expected
     assert strategy.estimatedTotalAssets() >= amount / 2 *(10000 - old_slippage)/10000
+
+
+    

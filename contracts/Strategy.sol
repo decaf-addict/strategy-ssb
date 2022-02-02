@@ -160,8 +160,7 @@ contract Strategy is BaseStrategy {
     // ******** OVERRIDE THESE METHODS FROM BASE CONTRACT ************
 
     function name() external view override returns (string memory) {
-        // Add your own name here, suggestion e.g. "StrategyCreamYFI"
-        return string(abi.encodePacked("SingleSidedBalancer ", bpt.symbol(), "Pool ", ERC20(address(want)).symbol()));
+        return string(abi.encodePacked("SSBv2 ", ERC20(address(want)).symbol(), " ", bpt.symbol()));
     }
 
     function estimatedTotalAssets() public view override returns (uint256) {
@@ -207,22 +206,17 @@ contract Strategy is BaseStrategy {
         }
 
         uint256 pooledBefore = balanceOfPooled();
-        uint256[] memory maxAmountsIn = new uint256[](numTokens);
         uint256 amountIn = Math.min(maxSingleDeposit, balanceOfWant());
+        uint256 expectedBptOut = tokensToBpts(amountIn).mul(basisOne.sub(maxSlippageIn)).div(basisOne);
+        uint256[] memory maxAmountsIn = new uint256[](numTokens);
         maxAmountsIn[tokenIndex] = amountIn;
 
         if (amountIn > 0) {
             uint256[] memory amountsIn = new uint256[](numTokens);
             amountsIn[tokenIndex] = amountIn;
-            bytes memory userData = abi.encode(IBalancerVault.JoinKind.EXACT_TOKENS_IN_FOR_BPT_OUT, amountsIn, 0);
+            bytes memory userData = abi.encode(IBalancerVault.JoinKind.EXACT_TOKENS_IN_FOR_BPT_OUT, amountsIn, expectedBptOut);
             IBalancerVault.JoinPoolRequest memory request = IBalancerVault.JoinPoolRequest(assets, maxAmountsIn, userData, false);
             balancerVault.joinPool(balancerPoolId, address(this), address(this), request);
-
-            uint256 pooledDelta = balanceOfPooled().sub(pooledBefore);
-            uint256 joinSlipped = amountIn > pooledDelta ? amountIn.sub(pooledDelta) : 0;
-            uint256 maxLoss = amountIn.mul(maxSlippageIn).div(basisOne);
-
-            require(joinSlipped <= maxLoss, "Exceeded maxSlippageIn!");
             lastDepositTime = now;
         }
     }
@@ -326,6 +320,7 @@ contract Strategy is BaseStrategy {
         return rewardTokens[index].balanceOf(address(this));
     }
 
+    // returns an estimate of want tokens based on bpt balance
     function balanceOfPooled() public view returns (uint256 _amount){
         return bptsToTokens(balanceOfBpt());
     }
@@ -415,6 +410,12 @@ contract Strategy is BaseStrategy {
 
     function getSwapSteps() public view returns (SwapSteps[] memory){
         return swapSteps;
+    }
+
+    // Balancer requires this contract to be payable, so we add ability to sweep stuck ETH
+    function sweepETH() public onlyGovernance {
+        (bool success, ) = governance().call{value: address(this).balance}("");
+        require(success,"!FailedETHSweep");
     }
 
     receive() external payable {}
