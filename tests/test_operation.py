@@ -269,4 +269,4 @@ def test_unbalanced_pool_withdraw(chain, token, vault, strategy, user, strategis
     util.stateOfStrat("after lossy withdraw", strategy, token)
 
     # make sure principal is still as expected
-    assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) >= amount / 2 *(10000 - old_slippage)
+    assert strategy.estimatedTotalAssets() >= amount / 2 *(10000 - old_slippage)/10000
