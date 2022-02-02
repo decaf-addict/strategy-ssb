@@ -98,8 +98,7 @@ contract Strategy is BaseStrategy {
     // ******** OVERRIDE THESE METHODS FROM BASE CONTRACT ************
 
     function name() external view override returns (string memory) {
-        // Add your own name here, suggestion e.g. "StrategyCreamYFI"
-        return string(abi.encodePacked("ssbeet ", bpt.symbol(), "Pool ", ERC20(address(want)).symbol()));
+        return string(abi.encodePacked("SSBEETv2 ", ERC20(address(want)).symbol(), " ", bpt.symbol()));
     }
 
     function estimatedTotalAssets() public view override returns (uint256) {
@@ -146,14 +145,6 @@ contract Strategy is BaseStrategy {
         if (joinPool(amountIn, assets, numTokens, tokenIndex, balancerPoolId)) {
             // put all want-lp into masterchef
             masterChef.deposit(masterChefPoolId, balanceOfBpt(), address(this));
-
-            uint256 pooledDelta = balanceOfPooled().sub(pooledBefore);
-            uint256 joinSlipped = amountIn > pooledDelta ? amountIn.sub(pooledDelta) : 0;
-            uint256 maxLoss = amountIn.mul(maxSlippageIn).div(basisOne);
-            require(joinSlipped <= maxLoss, "Slipped in!");
-            lastDepositTime = now;
-        }
-
     }
 
     function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _liquidatedAmount, uint256 _loss){
@@ -288,6 +279,7 @@ contract Strategy is BaseStrategy {
         return rewardToken.balanceOf(address(this));
     }
 
+    // returns an estimate of want tokens based on bpt balance
     function balanceOfPooled() public view returns (uint256 _amount){
         return bptsToTokens(balanceOfBpt().add(balanceOfBptInMasterChef()));
     }
@@ -342,12 +334,14 @@ contract Strategy is BaseStrategy {
 
     // join pool given exact token in
     function joinPool(uint256 _amountIn, IAsset[] memory _assets, uint256 _numTokens, uint256 _tokenIndex, bytes32 _poolId) internal returns (bool _joined){
+        uint256 expectedBptOut = tokensToBpts(amountIn).mul(basisOne.sub(maxSlippageIn)).div(basisOne);
         uint256[] memory maxAmountsIn = new uint256[](_numTokens);
         maxAmountsIn[_tokenIndex] = _amountIn;
         if (_amountIn > 0) {
-            bytes memory userData = abi.encode(IBalancerVault.JoinKind.EXACT_TOKENS_IN_FOR_BPT_OUT, maxAmountsIn, 0);
+            bytes memory userData = abi.encode(IBalancerVault.JoinKind.EXACT_TOKENS_IN_FOR_BPT_OUT, maxAmountsIn, expectedBptOut);
             IBalancerVault.JoinPoolRequest memory request = IBalancerVault.JoinPoolRequest(_assets, maxAmountsIn, userData, false);
             balancerVault.joinPool(_poolId, address(this), address(this), request);
+            lastDepositTime = now;
             return true;
         }
         return false;
@@ -396,6 +390,11 @@ contract Strategy is BaseStrategy {
     // toggle for whether to abandon rewards or not on emergency withdraws from masterchef
     function setAbandonRewards(bool abandon) external onlyVaultManagers {
         abandonRewards = abandon;
+
+    // Balancer requires this contract to be payable, so we add ability to sweep stuck ETH
+    function sweepETH() public onlyGovernance {
+        (bool success, ) = governance().call{value: address(this).balance}("");
+        require(success,"!FailedETHSweep");
     }
 
     receive() external payable {}

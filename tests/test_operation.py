@@ -8,6 +8,7 @@ def test_operation(
         chain, accounts, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX
 ):
     # Deposit to the vault
+    print("Strategy Name:", strategy.name())
     user_balance_before = token.balanceOf(user)
     token.approve(vault.address, amount, {"from": user})
     vault.deposit(amount, {"from": user})
@@ -206,6 +207,14 @@ def test_sweep(gov, vault, strategy, token, user, amount, wftm, wftm_amount):
     strategy.sweep(wftm, {"from": gov})
     assert wftm.balanceOf(gov) == wftm_amount + before_balance
 
+def test_eth_sweep(chain, token, vault, strategy, user, strategist, gov):
+    strategist.transfer(strategy,1e18)
+    with brownie.reverts():
+        strategy.sweepETH({"from": strategist})
+
+    eth_balance = gov.balance()
+    strategy.sweepETH({"from": gov})
+    assert gov.balance() > eth_balance
 
 def test_triggers(
         chain, gov, vault, strategy, token, amount, user, wftm, wftm_amount, strategist, beets, beets_whale,
