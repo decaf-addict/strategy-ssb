@@ -225,6 +225,8 @@ def test_unbalanced_pool_withdraw(chain, token, vault, strategy, user, strategis
 
     chain.sleep(strategy.minDepositPeriod() + 1)
     chain.mine(1)
+
+    # iterate to get all the funds in 
     while strategy.tendTrigger(0) == True:
         strategy.tend({'from': gov})
         util.stateOfStrat("tend", strategy, token)
@@ -233,8 +235,6 @@ def test_unbalanced_pool_withdraw(chain, token, vault, strategy, user, strategis
         chain.mine(1)
 
     print(f'pool rate: {pool.getRate()}')
-
-    print(f'swap 20m')
     tokens = balancer_vault.getPoolTokens(pool.getPoolId())[0]
     token2Index = 0
     if (tokens[0] == token2):
@@ -250,17 +250,21 @@ def test_unbalanced_pool_withdraw(chain, token, vault, strategy, user, strategis
     print(f'pooled: {pooled}')
     token2.approve(balancer_vault, 2 ** 256 - 1, {'from': token2_whale})
 
-    singleSwap = (pool.getPoolId(), 1, token2, token, pooled * 0.9, b'0x0')
+    # simulate bad pool state by whale to swap out 98% of one side of the pool so pool only has 2% of the original want
+    singleSwap = (pool.getPoolId(), 1, token2, token, pooled * 0.98, b'0x0')
     balancer_vault.swap(singleSwap, (token2_whale, False, token2_whale, False), token2.balanceOf(token2_whale),
                         chain.time(), {'from': token2_whale})
     print(balancer_vault.getPoolTokens(pool.getPoolId()))
     print(f'pool rate: {pool.getRate()}')
 
-    print(f'user withdraw 5m')
+    # now pool is in a bad state low-want
+    print(f'pool state: {balancer_vault.getPoolTokens(pool.getPoolId())}')
+
     # withdraw half to see how much we get back, it should be lossy. Assert that our slippage check prevents this
     with brownie.reverts():
         vault.withdraw(vault.balanceOf(user) / 2, user, 10000, {"from": user})
     old_slippage = strategy.maxSlippageOut()
+
     # loosen the slippage check to let the lossy withdraw go through
     strategy.setParams(10000, 10000, strategy.maxSingleDeposit(), strategy.minDepositPeriod(), {'from': gov})
     vault.withdraw(vault.balanceOf(user) / 2, user, 10000, {"from": user})
@@ -268,5 +272,5 @@ def test_unbalanced_pool_withdraw(chain, token, vault, strategy, user, strategis
     print(f'user lost: {amount / 2 - token.balanceOf(user)}')
     util.stateOfStrat("after lossy withdraw", strategy, token)
 
-    # make sure principal is still as expected
-    assert strategy.estimatedTotalAssets() >= amount / 2 *(10000 - old_slippage)/10000
+    # make sure principal is still as expected, aka loss wasn't socialized
+    assert strategy.estimatedTotalAssets() >= amount / 2 * (10000 - old_slippage) / 10000
