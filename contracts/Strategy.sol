@@ -362,10 +362,11 @@ contract Strategy is BaseStrategy {
 
     // sell bpt for want at current bpt rate
     function _sellBpt(uint256 _amountBpts) internal {
+        _amountBpts = Math.min(_amountBpts, balanceOfBpt());
         if (_amountBpts > 0) {
             uint256[] memory minAmountsOut = new uint256[](numTokens);
             minAmountsOut[tokenIndex] = bptsToTokens(_amountBpts).mul(basisOne.sub(maxSlippageOut)).div(basisOne);
-            bytes memory userData = abi.encode(IBalancerVault.ExitKind.EXACT_BPT_IN_FOR_ONE_TOKEN_OUT, Math.min(_amountBpts, balanceOfBpt()), tokenIndex);
+            bytes memory userData = abi.encode(IBalancerVault.ExitKind.EXACT_BPT_IN_FOR_ONE_TOKEN_OUT, _amountBpts, tokenIndex);
             IBalancerVault.ExitPoolRequest memory request = IBalancerVault.ExitPoolRequest(assets, minAmountsOut, userData, false);
             balancerVault.exitPool(balancerPoolId, address(this), address(this), request);
         }
