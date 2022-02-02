@@ -63,17 +63,9 @@ def test_manual_exit(
     # some slippage won't pass healthcheck
     strategy.harvest({"from": strategist})
 
-    stakeBpt = Contract(strategy.stakeBpt())
-    assert strategy.balanceOfBpt() == 0
-    assert strategy.balanceOfBptInMasterChef() > 0
-    assert stakeBpt.balanceOf(strategy) == 0
-    assert strategy.balanceOfStakeBptInMasterChef() > 0
-    strategy.emergencyWithdrawFromMasterChef({"from": gov})
+    strategy.withdrawFromMasterChef(strategy.balanceOfBptInMasterChef(), strategy.masterChefPoolId(), {"from": gov})
     assert strategy.balanceOfBpt() > 0
     assert strategy.balanceOfBptInMasterChef() == 0
-    assert stakeBpt.balanceOf(strategy) > 0
-    assert strategy.balanceOfStakeBptInMasterChef() == 0
-
 
 def test_profitable_harvest(
         chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, beets, beets_whale, management
@@ -96,10 +88,6 @@ def test_profitable_harvest(
 
     strategy.harvest({"from": strategist})
     chain.sleep(3600 * 6)  # 6 hrs needed for profits to unlock
-    chain.mine(1)
-    # do a second harvest so the first harvest's stake is sold
-    strategy.harvest({"from": strategist})
-    chain.sleep(3600 * 6)
     chain.mine(1)
 
     profit = token.balanceOf(vault.address)
@@ -139,12 +127,8 @@ def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RE
     chain.sleep(3600 * 6)  # 6 hrs needed for profits to unlock
     chain.mine(1)
     util.stateOfStrat("first harvest", strategy, beets)
-    # do a second harvest so the first harvest's stake is sold
-    strategy.harvest({"from": strategist})
-    chain.sleep(3600 * 6)
-    chain.mine(1)
+
     profit = token.balanceOf(vault.address)  # Profits go to vault
-    util.stateOfStrat("second harvest", strategy, beets)
 
     slippageIn = amount * strategy.maxSlippageIn() / 10000
     assert strategy.estimatedTotalAssets() + profit > (amount - slippageIn)
@@ -186,10 +170,7 @@ def test_change_debt(
     strategy.harvest({"from": strategist})
     chain.sleep(3600 * 6)
     chain.mine(1)
-    # do a second harvest so the first harvest's stake is sold
-    strategy.harvest({"from": strategist})
-    chain.sleep(3600 * 6)
-    chain.mine(1)
+
     util.stateOfStrat("after harvest 5000", strategy, token)
 
     # compounded slippage

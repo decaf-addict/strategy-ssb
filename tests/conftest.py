@@ -1,6 +1,6 @@
 import pytest
 from brownie import config
-from brownie import Contract
+from brownie import Contract, chain
 
 
 @pytest.fixture(autouse=True)
@@ -48,7 +48,8 @@ def token():
     # 0x6B175474E89094C44Da98b954EedeAC495271d0F DAI
     # 0x049d68029688eAbF473097a2fC38ef61633A3C7A fUSDT
     # 0x04068DA6C83AFCFA0e13ba15A6696662335D5B75 USDC
-    token_address = "0x82f0B8B456c1A451378467398982d4834b6829c1"
+    # 0x82f0B8B456c1A451378467398982d4834b6829c1 MIM
+    token_address = "0x04068DA6C83AFCFA0e13ba15A6696662335D5B75"
     yield Contract(token_address)
 
 
@@ -117,7 +118,8 @@ def balancer_vault():
 @pytest.fixture
 def pool():
     # 0xD163415BD34EF06f57C58D2AEd5A5478AfB464cC MIM-USDC-USDT Stable Pool
-    address = "0xD163415BD34EF06f57C58D2AEd5A5478AfB464cC"
+    # 0xeCAa1cBd28459d34B766F9195413Cb20122Fb942 dai-usdc stable pool
+    address = "0xeCAa1cBd28459d34B766F9195413Cb20122Fb942"
     yield Contract(address)
 
 
@@ -140,25 +142,25 @@ def beetsUsdcPoolId():
 
 @pytest.fixture
 def usdcTokenPoolId():
-    id = 0xd163415bd34ef06f57c58d2aed5a5478afb464cc00000000000000000000000e  # usdc-mim
+    id = 0xecaa1cbd28459d34b766f9195413cb20122fb942000200000000000000000120  # usdc-mim
     yield id
 
 
 @pytest.fixture
-def swapStepsBeets(beetsUsdcPoolId, usdcTokenPoolId, beets, usdc, token):
-    yield ([beetsUsdcPoolId, usdcTokenPoolId], [beets, usdc, token])
+def swapStepsBeets(beetsUsdcPoolId, beets, token):
+    yield ([beetsUsdcPoolId], [beets, token])
 
 
 @pytest.fixture
 def strategy(strategist, keeper, vault, Strategy, gov, balancer_vault, pool, beets, usdc, beetsUsdcPool, management,
              masterChef,
              swapStepsBeets):
-    strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, masterChef, 50, 50, 100_000, 2 * 60 * 60, 10)
+    strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, masterChef, 50, 50, 100_000, 2 * 60 * 60, 33)
     strategy.setKeeper(keeper)
     strategy.whitelistReward(beets, swapStepsBeets, {'from': gov})
-    strategy.setStakeInfo(8000, 7000, {'from': gov})
-    strategy.setStakeInfo([usdc, beets], beetsUsdcPool, 1, 0, {'from': gov})
     vault.addStrategy(strategy, 10_000, 0, 2 ** 256 - 1, 1_000, {"from": gov})
+    vault.setManagementFee(0, {"from": gov})
+    chain.sleep(1)
     yield strategy
 
 

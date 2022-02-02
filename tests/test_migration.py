@@ -25,7 +25,7 @@ def test_migration(
 
     # migrate to a new strategy
     new_strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, masterChef, 10, 10, 100_000, 2 * 60 * 60,
-                                     10)
+                                     33)
     vault.migrateStrategy(strategy, new_strategy, {"from": gov})
     assert (pytest.approx(new_strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount)
 
@@ -57,4 +57,3 @@ def test_masterchef(
 
     strategy.setMasterChef(masterChef, {"from": gov})
     assert strategy.balanceOfBptInMasterChef() == 0
-    assert strategy.balanceOfStakeBptInMasterChef() == 0
