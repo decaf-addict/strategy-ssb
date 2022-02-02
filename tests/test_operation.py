@@ -67,6 +67,7 @@ def test_manual_exit(
     assert strategy.balanceOfBpt() > 0
     assert strategy.balanceOfBptInMasterChef() == 0
 
+
 def test_profitable_harvest(
         chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, beets, beets_whale, management
 ):
@@ -219,3 +220,70 @@ def test_triggers(
 
     strategy.harvestTrigger(0)
     strategy.tendTrigger(0)
+
+
+def test_unbalanced_pool_withdraw(chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX,
+                                  token2_whale, token2,
+                                  gov, pool, balancer_vault):
+    # Deposit to the vault
+    token.approve(vault.address, amount, {"from": user})
+    vault.deposit(amount, {"from": user})
+    assert token.balanceOf(vault.address) == amount
+
+    # Harvest 1: Send funds through the strategy
+    chain.sleep(1)
+    print(f'pool rate: {pool.getRate()}')
+
+    strategy.harvest({"from": strategist})
+    assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount
+
+    chain.sleep(strategy.minDepositPeriod() + 1)
+    chain.mine(1)
+
+    # iterate to get all the funds in
+    while strategy.tendTrigger(0) == True:
+        strategy.tend({'from': gov})
+        util.stateOfStrat("tend", strategy, token)
+        assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount
+        chain.sleep(strategy.minDepositPeriod() + 1)
+        chain.mine(1)
+
+    print(f'pool rate: {pool.getRate()}')
+    tokens = balancer_vault.getPoolTokens(pool.getPoolId())[0]
+    token2Index = 0
+    if (tokens[0] == token2):
+        token2Index = 0
+    elif tokens[1] == token2:
+        token2Index = 1
+
+    util.stateOfStrat("after deposit all    ", strategy, token)
+    pooled = balancer_vault.getPoolTokens(pool.getPoolId())[1][strategy.tokenIndex()]
+    print(balancer_vault.getPoolTokens(pool.getPoolId()))
+    print(f'pooled: {pooled}')
+    token2.approve(balancer_vault, 2 ** 256 - 1, {'from': token2_whale})
+
+    # simulate bad pool state by whale to swap out 98% of one side of the pool so pool only has 2% of the original want
+    singleSwap = (pool.getPoolId(), 1, token2, token, pooled * 0.98, b'0x0')
+    balancer_vault.swap(singleSwap, (token2_whale, False, token2_whale, False), token2.balanceOf(token2_whale),
+                        chain.time(), {'from': token2_whale})
+    print(balancer_vault.getPoolTokens(pool.getPoolId()))
+    print(f'pool rate: {pool.getRate()}')
+
+    # now pool is in a bad state low-want
+    print(f'pool state: {balancer_vault.getPoolTokens(pool.getPoolId())}')
+
+    # withdraw half to see how much we get back, it should be lossy. Assert that our slippage check prevents this
+    with brownie.reverts():
+        vault.withdraw(vault.balanceOf(user) / 2, user, 10000, {"from": user})
+    old_slippage = strategy.maxSlippageOut()
+
+    # loosen the slippage check to let the lossy withdraw go through
+    strategy.setParams(10000, 10000, strategy.maxSingleDeposit(), strategy.minDepositPeriod(), {'from': gov})
+    vault.withdraw(vault.balanceOf(user) / 2, user, 10000, {"from": user})
+    print(f'pool state: {balancer_vault.getPoolTokens(pool.getPoolId())}')
+    print(f'user balance: {token.balanceOf(user)}')
+    print(f'user lost: {amount / 2 - token.balanceOf(user)}')
+    util.stateOfStrat("after lossy withdraw", strategy, token)
+
+    # make sure principal is still as expected, aka loss wasn't socialized
+    assert strategy.estimatedTotalAssets() >= amount / 2 * (10000 - old_slippage) / 10000
