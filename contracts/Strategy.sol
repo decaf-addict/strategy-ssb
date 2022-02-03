@@ -447,7 +447,7 @@ contract Strategy is BaseStrategy {
     }
 
     function setKeepParams(address _keep, uint _keepBips) external onlyGovernance {
-        require(keepBips < basisOne);
+        require(keepBips <= basisOne);
         keep = _keep;
         keepBips = _keepBips;
     }
@@ -455,7 +455,7 @@ contract Strategy is BaseStrategy {
     // Balancer requires this contract to be payable, so we add ability to sweep stuck ETH
     function sweepETH() public onlyGovernance {
         (bool success,) = governance().call{value : address(this).balance}("");
-        require(success, "!FailedETHSweep");
+        require(success, "FailedETHSweep");
     }
 
     receive() external payable {}
