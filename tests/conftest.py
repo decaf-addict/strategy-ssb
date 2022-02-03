@@ -1,7 +1,6 @@
-import pytest
+import pytest, requests
 from brownie import config, chain
 from brownie import Contract
-
 
 @pytest.fixture(autouse=True)
 def isolation(fn_isolation):
@@ -92,6 +91,11 @@ def token2_whale(accounts):
     return reserve
 
 @pytest.fixture
+def usdc_whale(accounts):
+    reserve = accounts.at("0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503", force=True)
+    yield reserve
+
+@pytest.fixture
 def amount2(accounts, token2, user, token2_whale):
     amount = 1_000_000 * 10 ** token2.decimals()
     token2.transfer(user, amount, {"from": token2_whale})
@@ -174,7 +178,7 @@ def balancer_vault():
 def pool():
     # 0x06Df3b2bbB68adc8B0e302443692037ED9f91b42 stable pool
     # 0x32296969Ef14EB0c6d29669C550D4a0449130230 metastable eth pool
-    address = "0x06Df3b2bbB68adc8B0e302443692037ED9f91b42"
+    address = "0x06Df3b2bbB68adc8B0e302443692037ED9f91b42" # staBAL3
     yield Contract(address)
 
 
@@ -220,7 +224,7 @@ def swapStepsLdo2(ldoWethPoolId, wethToken2PoolId, ldo, weth, token2):
 def strategy(strategist, keeper, vault, Strategy, gov, balancer_vault, pool, bal, ldo, management, swapStepsBal,
              swapStepsLdo):
     strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, 5, 5, 1_000_000, 2 * 60 * 60)
-    strategy.setKeeper(keeper)
+    strategy.setKeeper(keeper, {'from': gov})
     strategy.whitelistRewards(bal, swapStepsBal, {'from': gov})
     strategy.whitelistRewards(ldo, swapStepsLdo, {'from': gov})
     vault.addStrategy(strategy, 10_000, 0, 2 ** 256 - 1, 1_000, {"from": gov})
