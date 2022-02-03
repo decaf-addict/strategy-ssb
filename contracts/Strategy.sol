@@ -27,7 +27,7 @@ contract Strategy is BaseStrategy {
     bytes32 public balancerPoolId;
     uint8 public numTokens;
     uint8 public tokenIndex;
-    bool internal abandonRewards;
+    Toggles public toggles;
     address public keep;
     uint256 public keepBips;
 
@@ -37,6 +37,12 @@ contract Strategy is BaseStrategy {
     struct SwapSteps {
         bytes32[] poolIds;
         IAsset[] assets;
+    }
+
+    struct Toggles {
+        bool checkDebtOutstanding;
+        bool doSellRewards;
+        bool abandonRewards;
     }
 
     uint256 internal constant max = type(uint256).max;
@@ -97,6 +103,8 @@ contract Strategy is BaseStrategy {
         // 10%t to chad by default
         keep = governance();
         keepBips = 1000;
+
+        toggles = Toggles({checkDebtOutstanding : true, doSellRewards : true, abandonRewards: false});
     }
 
     // ******** OVERRIDE THESE METHODS FROM BASE CONTRACT ************
@@ -119,8 +127,10 @@ contract Strategy is BaseStrategy {
         _collectTradingFees();
         // claim beets
         _claimRewards();
-        // sell the % not staking
-        _sellRewards();
+        // this would allow finer control over harvesting to get credits in without selling
+        if (toggles.doSellRewards) {
+            _sellRewards();
+        }
 
         uint256 afterWant = balanceOfWant();
         _profit = afterWant.sub(beforeWant);
@@ -134,8 +144,10 @@ contract Strategy is BaseStrategy {
             _profit = 0;
         }
 
-        // final check to make sure accounting is correct
-        require(_debtOutstanding == _debtPayment.add(_loss));
+        if (toggles.checkDebtOutstanding) {
+            // final check to make sure accounting is correct
+            require(_debtOutstanding == _debtPayment.add(_loss));
+        }
     }
 
     function adjustPosition(uint256 _debtOutstanding) internal override {
@@ -146,7 +158,7 @@ contract Strategy is BaseStrategy {
         // put want into lp then put want-lp into masterchef
         uint256 pooledBefore = balanceOfPooled();
         uint256 amountIn = Math.min(maxSingleDeposit, balanceOfWant());
-        if (joinPool(amountIn, assets, numTokens, tokenIndex, balancerPoolId)) {
+        if (_joinPool(amountIn, assets, numTokens, tokenIndex, balancerPoolId)) {
             // put all want-lp into masterchef
             masterChef.deposit(masterChefPoolId, balanceOfBpt(), address(this));
         }
@@ -208,7 +220,7 @@ contract Strategy is BaseStrategy {
     // AbandonRewards withdraws lp without rewards. Specify where to withdraw to
     function _withdrawFromMasterChef(address _to, uint256 _amount, uint256 _masterChefPoolId) internal {
         if (_amount > 0) {
-            abandonRewards
+            toggles.abandonRewards
             ? masterChef.emergencyWithdraw(_masterChefPoolId, address(_to))
             : masterChef.withdrawAndHarvest(_masterChefPoolId, _amount, address(_to));
         }
@@ -337,7 +349,7 @@ contract Strategy is BaseStrategy {
     }
 
     // join pool given exact token in
-    function joinPool(uint256 _amountIn, IAsset[] memory _assets, uint256 _numTokens, uint256 _tokenIndex, bytes32 _poolId) internal returns (bool _joined){
+    function _joinPool(uint256 _amountIn, IAsset[] memory _assets, uint256 _numTokens, uint256 _tokenIndex, bytes32 _poolId) internal returns (bool _joined){
         uint256 expectedBptOut = tokensToBpts(_amountIn).mul(basisOne.sub(maxSlippageIn)).div(basisOne);
         uint256[] memory maxAmountsIn = new uint256[](_numTokens);
         maxAmountsIn[_tokenIndex] = _amountIn;
@@ -368,6 +380,12 @@ contract Strategy is BaseStrategy {
         minDepositPeriod = _minDepositPeriod;
     }
 
+    function setToggles(bool _checkDebtOustanding, bool _doSellRewards, bool _abandon) external onlyVaultManagers {
+        toggles.checkDebtOutstanding = _checkDebtOustanding;
+        toggles.doSellRewards = _doSellRewards;
+        toggles.abandonRewards = _abandon;
+    }
+
     // swap step contains information on multihop sells
     function getSwapSteps() public view returns (SwapSteps memory){
         return swapSteps;
@@ -380,11 +398,6 @@ contract Strategy is BaseStrategy {
         bpt.approve(address(masterChef), 0);
         masterChef = IBeethovenxMasterChef(_masterChef);
         bpt.approve(address(masterChef), max);
-    }
-
-    // toggle for whether to abandon rewards or not on emergency withdraws from masterchef
-    function setAbandonRewards(bool abandon) external onlyVaultManagers {
-        abandonRewards = abandon;
     }
 
     function setKeepParams(address _keep, uint _keepBips) external onlyGovernance {
