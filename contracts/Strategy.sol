@@ -15,7 +15,6 @@ import "../interfaces/MasterChef.sol";
 
 contract Strategy is BaseStrategy {
     using SafeERC20 for IERC20;
-    using Address for address;
     using SafeMath for uint256;
 
     IERC20 internal constant weth = IERC20(address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2));
@@ -73,6 +72,57 @@ contract Strategy is BaseStrategy {
         uint256 _minDepositPeriod,
         uint256 _masterChefPoolId)
     public BaseStrategy(_vault){
+        _initializeStrat(
+            _vault,
+            _balancerVault,
+            _balancerPool,
+            _masterChef,
+            _maxSlippageIn,
+            _maxSlippageOut,
+            _maxSingleDeposit,
+            _minDepositPeriod,
+            _masterChefPoolId);
+    }
+
+    function initialize(
+        address _vault,
+        address _strategist,
+        address _rewards,
+        address _keeper,
+        address _balancerVault,
+        address _balancerPool,
+        address _masterChef,
+        uint256 _maxSlippageIn,
+        uint256 _maxSlippageOut,
+        uint256 _maxSingleDeposit,
+        uint256 _minDepositPeriod,
+        uint256 _masterChefPoolId
+    ) external {
+        _initialize(_vault, _strategist, _rewards, _keeper);
+        _initializeStrat(
+            _vault,
+            _balancerVault,
+            _balancerPool,
+            _masterChef,
+            _maxSlippageIn,
+            _maxSlippageOut,
+            _maxSingleDeposit,
+            _minDepositPeriod,
+            _masterChefPoolId
+        );
+    }
+
+    function _initializeStrat(
+        address _vault,
+        address _balancerVault,
+        address _balancerPool,
+        address _masterChef,
+        uint256 _maxSlippageIn,
+        uint256 _maxSlippageOut,
+        uint256 _maxSingleDeposit,
+        uint256 _minDepositPeriod,
+        uint256 _masterChefPoolId
+    ) internal {
         healthCheck = address(0xf13Cd6887C62B5beC145e30c38c4938c5E627fe0);
         bpt = IBalancerPool(_balancerPool);
         balancerPoolId = bpt.getPoolId();
@@ -104,13 +154,13 @@ contract Strategy is BaseStrategy {
         keep = governance();
         keepBips = 1000;
 
-        toggles = Toggles({checkDebtOutstanding : true, doSellRewards : true, abandonRewards: false});
+        toggles = Toggles({checkDebtOutstanding : true, doSellRewards : true, abandonRewards : false});
     }
 
     // ******** OVERRIDE THESE METHODS FROM BASE CONTRACT ************
 
     function name() external view override returns (string memory) {
-        return string(abi.encodePacked("SSBEETv2 ", ERC20(address(want)).symbol(), " ", bpt.symbol()));
+        return string(abi.encodePacked("ssbeetV2 ", ERC20(address(want)).symbol(), " ", bpt.symbol()));
     }
 
     function estimatedTotalAssets() public view override returns (uint256) {
@@ -157,8 +207,7 @@ contract Strategy is BaseStrategy {
 
         // put want into lp then put want-lp into masterchef
         uint256 pooledBefore = balanceOfPooled();
-        uint256 amountIn = Math.min(maxSingleDeposit, balanceOfWant());
-        if (_joinPool(amountIn, assets, numTokens, tokenIndex, balancerPoolId)) {
+        if (_joinPool()) {
             // put all want-lp into masterchef
             masterChef.deposit(masterChefPoolId, balanceOfBpt(), address(this));
         }
@@ -297,10 +346,6 @@ contract Strategy is BaseStrategy {
         return bptsToTokens(balanceOfBpt().add(balanceOfBptInMasterChef()));
     }
 
-    function pendingRewards() public view returns (uint256 _amount){
-        return masterChef.pendingBeets(masterChefPoolId, address(this));
-    }
-
     /// use bpt rate to estimate equivalent amount of want.
     function bptsToTokens(uint _amountBpt) public view returns (uint _amount){
         uint unscaled = _amountBpt * bpt.getRate() / 1e18;
@@ -349,14 +394,15 @@ contract Strategy is BaseStrategy {
     }
 
     // join pool given exact token in
-    function _joinPool(uint256 _amountIn, IAsset[] memory _assets, uint256 _numTokens, uint256 _tokenIndex, bytes32 _poolId) internal returns (bool _joined){
-        uint256 expectedBptOut = tokensToBpts(_amountIn).mul(basisOne.sub(maxSlippageIn)).div(basisOne);
-        uint256[] memory maxAmountsIn = new uint256[](_numTokens);
-        maxAmountsIn[_tokenIndex] = _amountIn;
-        if (_amountIn > 0) {
+    function _joinPool() internal returns (bool _joined){
+        uint256 amountIn = Math.min(maxSingleDeposit, balanceOfWant());
+        uint256 expectedBptOut = tokensToBpts(amountIn).mul(basisOne.sub(maxSlippageIn)).div(basisOne);
+        uint256[] memory maxAmountsIn = new uint256[](numTokens);
+        maxAmountsIn[tokenIndex] = amountIn;
+        if (amountIn > 0) {
             bytes memory userData = abi.encode(IBalancerVault.JoinKind.EXACT_TOKENS_IN_FOR_BPT_OUT, maxAmountsIn, expectedBptOut);
-            IBalancerVault.JoinPoolRequest memory request = IBalancerVault.JoinPoolRequest(_assets, maxAmountsIn, userData, false);
-            balancerVault.joinPool(_poolId, address(this), address(this), request);
+            IBalancerVault.JoinPoolRequest memory request = IBalancerVault.JoinPoolRequest(assets, maxAmountsIn, userData, false);
+            balancerVault.joinPool(balancerPoolId, address(this), address(this), request);
             lastDepositTime = now;
             return true;
         }

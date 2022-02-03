@@ -52,6 +52,7 @@ def token():
     token_address = "0x04068DA6C83AFCFA0e13ba15A6696662335D5B75"
     yield Contract(token_address)
 
+
 @pytest.fixture
 def token2():
     # 0x8D11eC38a3EB5E956B052f67Da8Bdc9bef8Abf3E DAI
@@ -61,6 +62,7 @@ def token2():
     token_address = "0x8D11eC38a3EB5E956B052f67Da8Bdc9bef8Abf3E"
     yield Contract(token_address)
 
+
 @pytest.fixture
 def token_whale(accounts):
     # 0x2dd7C9371965472E5A5fD28fbE165007c61439E1 MIM
@@ -68,6 +70,7 @@ def token_whale(accounts):
     # 0x2dd7C9371965472E5A5fD28fbE165007c61439E1 USDC
     # 0x8D9AED9882b4953a0c9fa920168fa1FDfA0eBE75 DAI
     return accounts.at("0x2dd7C9371965472E5A5fD28fbE165007c61439E1", force=True)
+
 
 @pytest.fixture
 def token2_whale(accounts):
@@ -84,6 +87,7 @@ def amount(accounts, token, user, token_whale):
     # In order to get some funds for the token you are about to use,
     token.transfer(user, amount, {"from": token_whale})
     yield amount
+
 
 @pytest.fixture
 def amount2(accounts, token2, user, token2_whale):
@@ -176,10 +180,19 @@ def swapStepsBeets(beetsUsdcPoolId, beets, token):
 
 
 @pytest.fixture
-def strategy(strategist, keeper, vault, Strategy, gov, balancer_vault, pool, beets, usdc, beetsUsdcPool, management,
-             masterChef,
-             swapStepsBeets):
-    strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, masterChef, 5, 5, 100_000, 2 * 60 * 60, 33)
+def strategyFactory(sstrategist, keeper, vault, StrategyFactory, gov, balancer_vault, pool, beets, usdc, beetsUsdcPool,
+                    management,
+                    masterChef,
+                    swapStepsBeets):
+    factory = strategist.deploy(StrategyFactory, vault, balancer_vault, pool, masterChef, 5, 5, 100_000, 2 * 60 * 60,
+                                33)
+    yield factory
+
+
+@pytest.fixture
+def strategy(strategist, keeper, vault, strategyFactory, gov, balancer_vault, pool, beets, usdc, beetsUsdcPool,
+             management, masterChef, swapStepsBeets):
+    strategy = Strategy.at(strategyFactory.original())
     strategy.setKeeper(keeper)
     strategy.whitelistReward(beets, swapStepsBeets, {'from': gov})
     vault.addStrategy(strategy, 10_000, 0, 2 ** 256 - 1, 1_000, {"from": gov})
