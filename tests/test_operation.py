@@ -206,14 +206,16 @@ def test_sweep(gov, vault, strategy, token, user, amount, wftm, wftm_amount):
     strategy.sweep(wftm, {"from": gov})
     assert wftm.balanceOf(gov) == wftm_amount + before_balance
 
+
 def test_eth_sweep(chain, token, vault, strategy, user, strategist, gov):
-    strategist.transfer(strategy,1e18)
+    strategist.transfer(strategy, 1e18)
     with brownie.reverts():
         strategy.sweepETH({"from": strategist})
 
     eth_balance = gov.balance()
     strategy.sweepETH({"from": gov})
     assert gov.balance() > eth_balance
+
 
 def test_triggers(
         chain, gov, vault, strategy, token, amount, user, wftm, wftm_amount, strategist, beets, beets_whale,
@@ -228,6 +230,45 @@ def test_triggers(
 
     strategy.harvestTrigger(0)
     strategy.tendTrigger(0)
+
+# simulate a bad deposit, aka pool has too much of the want you're trying to deposit already
+def test_unbalance_deposit(chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, token2_whale,
+                           token2, token_whale, gov, pool, balancer_vault):
+    token.approve(vault.address, 2 ** 256 - 1, {"from": user})
+    vault.deposit(amount, {"from": user})
+    assert token.balanceOf(vault.address) == amount
+
+    print(f'pool rate before whale swap: {pool.getRate()}')
+    pooled = balancer_vault.getPoolTokens(pool.getPoolId())[1][strategy.tokenIndex()]
+    token.approve(balancer_vault, 2 ** 256 - 1, {'from': token_whale})
+    chain.snapshot()
+
+    print(f'pool rate: {pool.getRate()}')
+    tokens = balancer_vault.getPoolTokens(pool.getPoolId())[0]
+    token2Index = 0
+    if (tokens[0] == token2):
+        token2Index = 0
+    elif tokens[1] == token2:
+        token2Index = 1
+
+    pooled2 = balancer_vault.getPoolTokens(pool.getPoolId())[1][token2Index]
+    print(balancer_vault.getPoolTokens(pool.getPoolId()))
+    print(f'pooled: {pooled2}')
+    token.approve(balancer_vault, 2 ** 256 - 1, {'from': token_whale})
+
+    # simulate bad pool state by whale to swap out 98% of one side of the pool so pool only has excess want
+    singleSwap = (pool.getPoolId(), 1, token, token2, pooled2 * 0.98, b'0x0')
+    balancer_vault.swap(singleSwap, (token_whale, False, token_whale, False), token.balanceOf(token_whale),
+                        chain.time(), {'from': token_whale})
+    print(balancer_vault.getPoolTokens(pool.getPoolId()))
+    print(f'pool rate: {pool.getRate()}')
+
+
+    print(f'pool rate after whale swap: {pool.getRate()}')
+
+    with brownie.reverts("BAL#208"):
+        tx = strategy.harvest({
+            "from": strategist})  # Error Code BAL#208 BPT_OUT_MIN_AMOUNT - Slippage/front-running protection check failed on a pool join
 
 
 def test_unbalanced_pool_withdraw(chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX,

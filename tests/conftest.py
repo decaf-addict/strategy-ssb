@@ -67,16 +67,16 @@ def token2():
 def token_whale(accounts):
     # 0x2dd7C9371965472E5A5fD28fbE165007c61439E1 MIM
     # 0x2dd7C9371965472E5A5fD28fbE165007c61439E1 fUSDT
-    # 0x2dd7C9371965472E5A5fD28fbE165007c61439E1 USDC
+    # 0x93C08a3168fC469F3fC165cd3A471D19a37ca19e USDC
     # 0x8D9AED9882b4953a0c9fa920168fa1FDfA0eBE75 DAI
-    return accounts.at("0x2dd7C9371965472E5A5fD28fbE165007c61439E1", force=True)
+    return accounts.at("0x93C08a3168fC469F3fC165cd3A471D19a37ca19e", force=True)
 
 
 @pytest.fixture
 def token2_whale(accounts):
     # 0x2dd7C9371965472E5A5fD28fbE165007c61439E1 MIM
     # 0x2dd7C9371965472E5A5fD28fbE165007c61439E1 fUSDT
-    # 0x2dd7C9371965472E5A5fD28fbE165007c61439E1 USDC
+    # 0x93C08a3168fC469F3fC165cd3A471D19a37ca19e USDC
     # 0x8D9AED9882b4953a0c9fa920168fa1FDfA0eBE75 DAI
     return accounts.at("0x8D9AED9882b4953a0c9fa920168fa1FDfA0eBE75", force=True)
 
@@ -180,7 +180,7 @@ def swapStepsBeets(beetsUsdcPoolId, beets, token):
 
 
 @pytest.fixture
-def strategyFactory(sstrategist, keeper, vault, StrategyFactory, gov, balancer_vault, pool, beets, usdc, beetsUsdcPool,
+def strategyFactory(strategist, keeper, vault, StrategyFactory, gov, balancer_vault, pool, beets, usdc, beetsUsdcPool,
                     management,
                     masterChef,
                     swapStepsBeets):
@@ -191,9 +191,9 @@ def strategyFactory(sstrategist, keeper, vault, StrategyFactory, gov, balancer_v
 
 @pytest.fixture
 def strategy(strategist, keeper, vault, strategyFactory, gov, balancer_vault, pool, beets, usdc, beetsUsdcPool,
-             management, masterChef, swapStepsBeets):
+             management, masterChef, swapStepsBeets, Strategy):
     strategy = Strategy.at(strategyFactory.original())
-    strategy.setKeeper(keeper)
+    strategy.setKeeper(keeper,{'from': gov})
     strategy.whitelistReward(beets, swapStepsBeets, {'from': gov})
     vault.addStrategy(strategy, 10_000, 0, 2 ** 256 - 1, 1_000, {"from": gov})
     vault.setManagementFee(0, {"from": gov})
