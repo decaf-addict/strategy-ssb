@@ -239,9 +239,10 @@ def test_unbalance_deposit(chain, token, vault, strategy, user, strategist, amou
         0,              # Kind --- #0 = GIVEN_IN, 1 = GIVEN_OUT
         token,          # asset in
         token2,         # asset out
-        pooled * 3,     # amount -- here we increase usdc amount of pool dramatically
+        pooled / 1.5,   # amount -- here we increase usdc side of the pool dramatically
         b'0x0'          # user data
     )
+    chain.snapshot()
     balancer_vault.swap(
             singleSwap,             # swap struct
             (                       # fund struct

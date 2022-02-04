@@ -212,9 +212,7 @@ contract Strategy is BaseStrategy {
         maxAmountsIn[tokenIndex] = amountIn;
 
         if (amountIn > 0) {
-            uint256[] memory amountsIn = new uint256[](numTokens);
-            amountsIn[tokenIndex] = amountIn;
-            bytes memory userData = abi.encode(IBalancerVault.JoinKind.EXACT_TOKENS_IN_FOR_BPT_OUT, amountsIn, expectedBptOut);
+            bytes memory userData = abi.encode(IBalancerVault.JoinKind.EXACT_TOKENS_IN_FOR_BPT_OUT, maxAmountsIn, expectedBptOut);
             IBalancerVault.JoinPoolRequest memory request = IBalancerVault.JoinPoolRequest(assets, maxAmountsIn, userData, false);
             balancerVault.joinPool(balancerPoolId, address(this), address(this), request);
             lastDepositTime = now;
