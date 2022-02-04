@@ -39,7 +39,7 @@ def test_emergency_exit(
     assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount
 
     # set emergency and exit
-    strategy.setEmergencyExit()
+    strategy.setEmergencyExit({"from": gov})
     chain.mine(5)
     chain.sleep(1)
     # some slippage won't pass healthcheck
@@ -263,8 +263,8 @@ def test_unbalance_deposit(chain, token, vault, strategy, user, strategist, amou
     print(balancer_vault.getPoolTokens(pool.getPoolId()))
     print(f'pool rate: {pool.getRate()}')
 
-
     print(f'pool rate after whale swap: {pool.getRate()}')
+    print(f'pool state after whale swap: {balancer_vault.getPoolTokens(pool.getPoolId())}')
 
     with brownie.reverts("BAL#208"):
         tx = strategy.harvest({
