@@ -205,7 +205,6 @@ contract Strategy is BaseStrategy {
             return;
         }
 
-        uint256 pooledBefore = balanceOfPooled();
         uint256 amountIn = Math.min(maxSingleDeposit, balanceOfWant());
         uint256 expectedBptOut = tokensToBpts(amountIn).mul(basisOne.sub(maxSlippageIn)).div(basisOne);
         uint256[] memory maxAmountsIn = new uint256[](numTokens);
