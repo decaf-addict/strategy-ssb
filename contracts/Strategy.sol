@@ -27,6 +27,9 @@ contract Strategy is BaseStrategy {
     uint8 public numTokens;
     uint8 public tokenIndex;
     Toggles public toggles;
+
+    // The keep mechanism is intended for governance voting purposes. Strategy will route a percentage (default 10%)
+    // to the governance or eventually a voter proxy in order to slowly amass voting power for Beethoven pool gauges
     address public keep;
     uint256 public keepBips;
 
