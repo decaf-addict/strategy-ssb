@@ -17,7 +17,6 @@ contract Strategy is BaseStrategy {
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
 
-    IERC20 internal constant weth = IERC20(address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2));
     IBalancerVault public balancerVault;
     IBalancerPool public bpt;
     IERC20 public rewardToken;
@@ -209,7 +208,6 @@ contract Strategy is BaseStrategy {
         }
 
         // put want into lp then put want-lp into masterchef
-        uint256 pooledBefore = balanceOfPooled();
         if (_joinPool()) {
             // put all want-lp into masterchef
             masterChef.deposit(masterChefPoolId, balanceOfBpt(), address(this));
@@ -222,7 +220,7 @@ contract Strategy is BaseStrategy {
             uint256 toExitAmount = _amountNeeded.sub(looseAmount);
 
             // withdraw all bpt out of masterchef
-            masterChef.withdrawAndHarvest(masterChefPoolId, balanceOfBptInMasterChef(), address(this));
+            _withdrawFromMasterChef(address(this), balanceOfBptInMasterChef(), masterChefPoolId);
             // sell some bpt
             _sellBpt(tokensToBpts(toExitAmount), assets, tokenIndex, balancerPoolId, balanceOfBpt());
             // put remaining bpt back into masterchef
@@ -238,7 +236,7 @@ contract Strategy is BaseStrategy {
     function liquidateAllPositions() internal override returns (uint256 liquidated) {
         uint totalDebt = vault.strategies(address(this)).totalDebt;
 
-        masterChef.withdrawAndHarvest(masterChefPoolId, balanceOfBptInMasterChef(), address(this));
+        _withdrawFromMasterChef(address(this), balanceOfBptInMasterChef(), masterChefPoolId);
         // sell all bpt
         _sellBpt(balanceOfBpt(), assets, tokenIndex, balancerPoolId, balanceOfBpt());
 
@@ -320,7 +318,7 @@ contract Strategy is BaseStrategy {
         uint256 debt = vault.strategies(address(this)).totalDebt;
         if (total > debt) {
             // withdraw all bpt out of masterchef
-            masterChef.withdrawAndHarvest(masterChefPoolId, balanceOfBptInMasterChef(), address(this));
+            _withdrawFromMasterChef(address(this), balanceOfBptInMasterChef(), masterChefPoolId);
             uint256 profit = total.sub(debt);
             _sellBpt(tokensToBpts(profit), assets, tokenIndex, balancerPoolId, balanceOfBpt());
             // put remaining bpt back into masterchef
@@ -414,6 +412,7 @@ contract Strategy is BaseStrategy {
 
     function whitelistReward(address _rewardToken, SwapSteps memory _steps) public onlyVaultManagers {
         rewardToken = IERC20(_rewardToken);
+        rewardToken.approve(address(balancerVault), 0);
         rewardToken.approve(address(balancerVault), max);
         swapSteps = _steps;
     }
