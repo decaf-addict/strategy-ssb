@@ -219,12 +219,11 @@ contract Strategy is BaseStrategy {
         if (_amountNeeded > looseAmount) {
             uint256 toExitAmount = _amountNeeded.sub(looseAmount);
 
-            // withdraw all bpt out of masterchef
-            _withdrawFromMasterChef(address(this), balanceOfBptInMasterChef(), masterChefPoolId);
-            // sell some bpt
-            _sellBpt(tokensToBpts(toExitAmount), assets, tokenIndex, balancerPoolId, balanceOfBpt());
-            // put remaining bpt back into masterchef
-            masterChef.deposit(masterChefPoolId, balanceOfBpt(), address(this));
+            //need to know how much we need to withdraw in bpt
+            toExitAmount = tokensToBpts(toExitAmount);
+
+            // withdraw needed bpt out of masterchef and sell it for want
+            _withdrawFromMasterChefAndSellBpt(toExitAmount);
 
             _liquidatedAmount = Math.min(balanceOfWant(), _amountNeeded);
             _loss = _amountNeeded.sub(_liquidatedAmount);
@@ -234,12 +233,9 @@ contract Strategy is BaseStrategy {
     }
 
     function liquidateAllPositions() internal override returns (uint256 liquidated) {
-        uint totalDebt = vault.strategies(address(this)).totalDebt;
-
         _withdrawFromMasterChef(address(this), balanceOfBptInMasterChef(), masterChefPoolId);
         // sell all bpt
         _sellBpt(balanceOfBpt(), assets, tokenIndex, balancerPoolId, balanceOfBpt());
-
         liquidated = balanceOfWant();
         return liquidated;
     }
@@ -247,6 +243,10 @@ contract Strategy is BaseStrategy {
     // note that this withdraws into newStrategy.
     function prepareMigration(address _newStrategy) internal override {
         _withdrawFromMasterChef(_newStrategy, balanceOfBptInMasterChef(), masterChefPoolId);
+        uint256 _balanceOfBpt = balanceOfBpt();
+        if (_balanceOfBpt > 0) {
+            bpt.transfer(_newStrategy, _balanceOfBpt);
+        }
         uint256 rewards = balanceOfReward();
         if (rewards > 0) {
             rewardToken.transfer(_newStrategy, rewards);
@@ -275,6 +275,19 @@ contract Strategy is BaseStrategy {
             : masterChef.withdrawAndHarvest(_masterChefPoolId, _amount, address(_to));
         }
     }
+
+    // Withdraw the desired amount in bpt from masterchef and sell it for want
+    function _withdrawFromMasterChefAndSellBpt(uint256 amount) internal {
+        // don't try to withdraw more than what we have in masterchef
+        amount = Math.min(amount, balanceOfBptInMasterChef());
+
+        // withdraw the desired amount out of masterchef
+        _withdrawFromMasterChef(address(this), amount, masterChefPoolId);
+
+        // sell the desired amount for want
+        _sellBpt(amount, assets, tokenIndex, balancerPoolId, balanceOfBpt());
+    }
+
 
     // claim all beets rewards from masterchef
     function _claimRewards() internal {
@@ -316,13 +329,10 @@ contract Strategy is BaseStrategy {
     function _collectTradingFees() internal {
         uint256 total = estimatedTotalAssets();
         uint256 debt = vault.strategies(address(this)).totalDebt;
+        // if there is a profit from trading fees, we sell it for want
         if (total > debt) {
-            // withdraw all bpt out of masterchef
-            _withdrawFromMasterChef(address(this), balanceOfBptInMasterChef(), masterChefPoolId);
             uint256 profit = total.sub(debt);
-            _sellBpt(tokensToBpts(profit), assets, tokenIndex, balancerPoolId, balanceOfBpt());
-            // put remaining bpt back into masterchef
-            masterChef.deposit(masterChefPoolId, balanceOfBpt(), address(this));
+            _withdrawFromMasterChefAndSellBpt(tokensToBpts(profit));
         }
     }
 
@@ -441,11 +451,15 @@ contract Strategy is BaseStrategy {
 
     // masterchef contract in case of masterchef migration
     function setMasterChef(address _masterChef) public onlyGovernance {
+        // withdraw all bpt from masterchef before migration
         _withdrawFromMasterChef(address(this), balanceOfBptInMasterChef(), masterChefPoolId);
 
         bpt.approve(address(masterChef), 0);
         masterChef = IBeethovenxMasterChef(_masterChef);
         bpt.approve(address(masterChef), max);
+
+        // deposit bpt in new masterchef
+        masterChef.deposit(masterChefPoolId, balanceOfBpt(), address(this));
     }
 
     function setKeepParams(address _keep, uint _keepBips) external onlyGovernance {
@@ -462,5 +476,3 @@ contract Strategy is BaseStrategy {
 
     receive() external payable {}
 }
-
-

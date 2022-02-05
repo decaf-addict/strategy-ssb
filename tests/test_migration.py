@@ -56,8 +56,14 @@ def test_masterchef(
     chain.mine(3)
     strategy.tend({"from": gov})
 
+    oldMasterChef = Contract(strategy.masterChef())
+    mcpID = strategy.masterChefPoolId()
+
+    prevBptBalanceInMasterChef = strategy.balanceOfBptInMasterChef()
     strategy.setMasterChef(masterChef, {"from": gov})
-    assert strategy.balanceOfBptInMasterChef() == 0
+
+    #new masterchef should have all the bpt deposited
+    assert strategy.balanceOfBptInMasterChef() == prevBptBalanceInMasterChef
 
 
 def test_real_migration(
