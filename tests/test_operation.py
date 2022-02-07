@@ -70,7 +70,7 @@ def test_manual_exit(
 
 
 def test_profitable_harvest(
-        chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, beets, beets_whale, management
+        chain, token, vault, gov, strategy, user, strategist, amount, RELATIVE_APPROX, beets, beets_whale, management
 ):
     # Deposit to the vault
     token.approve(vault.address, amount, {"from": user})
@@ -85,10 +85,10 @@ def test_profitable_harvest(
     before_pps = vault.pricePerShare()
 
     # Harvest 2: Realize profit
-
     util.airdrop_rewards(strategy, beets, beets_whale)
 
-    strategy.harvest({"from": strategist})
+    tx = strategy.harvest({"from": strategist})
+    print(tx.events["StrategyReported"])
     chain.sleep(3600 * 6)  # 6 hrs needed for profits to unlock
     chain.mine(1)
 

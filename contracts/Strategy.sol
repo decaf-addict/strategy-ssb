@@ -217,10 +217,8 @@ contract Strategy is BaseStrategy {
     function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _liquidatedAmount, uint256 _loss){
         uint256 looseAmount = balanceOfWant();
         if (_amountNeeded > looseAmount) {
-            uint256 toExitAmount = _amountNeeded.sub(looseAmount);
-
-            //need to know how much we need to withdraw in bpt
-            toExitAmount = tokensToBpts(toExitAmount);
+            // convert amount still needed to bpt
+            uint256 toExitAmount = tokensToBpts(_amountNeeded.sub(looseAmount));
 
             // withdraw needed bpt out of masterchef and sell it for want
             _withdrawFromMasterChefAndSellBpt(toExitAmount);
@@ -407,10 +405,10 @@ contract Strategy is BaseStrategy {
     // join pool given exact token in
     function _joinPool() internal returns (bool _joined){
         uint256 amountIn = Math.min(maxSingleDeposit, balanceOfWant());
-        uint256 expectedBptOut = tokensToBpts(amountIn).mul(basisOne.sub(maxSlippageIn)).div(basisOne);
-        uint256[] memory maxAmountsIn = new uint256[](numTokens);
-        maxAmountsIn[tokenIndex] = amountIn;
         if (amountIn > 0) {
+            uint256 expectedBptOut = tokensToBpts(amountIn).mul(basisOne.sub(maxSlippageIn)).div(basisOne);
+            uint256[] memory maxAmountsIn = new uint256[](numTokens);
+            maxAmountsIn[tokenIndex] = amountIn;
             bytes memory userData = abi.encode(IBalancerVault.JoinKind.EXACT_TOKENS_IN_FOR_BPT_OUT, maxAmountsIn, expectedBptOut);
             IBalancerVault.JoinPoolRequest memory request = IBalancerVault.JoinPoolRequest(assets, maxAmountsIn, userData, false);
             balancerVault.joinPool(balancerPoolId, address(this), address(this), request);
