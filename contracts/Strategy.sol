@@ -28,16 +28,11 @@ contract Strategy is BaseStrategy {
     bytes32 public balancerPoolId;
     uint8 public numTokens;
     uint8 public tokenIndex;
-    Toggles public toggles;
+    bool public doSellRewards = true;
 
     struct SwapSteps {
         bytes32[] poolIds;
         IAsset[] assets;
-    }
-
-    struct Toggles {
-        bool checkDebtOutstanding;
-        bool doSellRewards;
     }
 
     uint256 internal constant max = type(uint256).max;
@@ -94,13 +89,14 @@ contract Strategy is BaseStrategy {
         uint256 _maxSingleDeposit,
         uint256 _minDepositPeriod)
     internal {
-        require(address(bpt) == address(0x0), "Strategy already initialized!");
-        healthCheck = address(0xDDCea799fF1699e98EDF118e0629A974Df7DF012);
         // health.ychad.eth
+        healthCheck = address(0xDDCea799fF1699e98EDF118e0629A974Df7DF012);
+        doSellRewards = true;
         bpt = IBalancerPool(_balancerPool);
         balancerPoolId = bpt.getPoolId();
         balancerVault = IBalancerVault(_balancerVault);
         (IERC20[] memory tokens,,) = balancerVault.getPoolTokens(balancerPoolId);
+        require(tokens.length > 0, "Empty Pool");
         numTokens = uint8(tokens.length);
         assets = new IAsset[](numTokens);
         tokenIndex = type(uint8).max;
@@ -118,8 +114,6 @@ contract Strategy is BaseStrategy {
         minDepositPeriod = _minDepositPeriod;
 
         want.safeApprove(address(balancerVault), max);
-
-        toggles = Toggles({checkDebtOutstanding : true, doSellRewards : true});
     }
 
     event Cloned(address indexed clone);
@@ -177,7 +171,7 @@ contract Strategy is BaseStrategy {
         // 2 forms of profit. Incentivized rewards (BAL+other) and pool fees (want)
         collectTradingFees();
         // this would allow finer control over harvesting to get credits in without selling
-        if (toggles.doSellRewards) {
+        if (doSellRewards) {
             _sellRewards();
         }
 
@@ -192,11 +186,6 @@ contract Strategy is BaseStrategy {
             _loss = _loss.sub(_profit);
             _debtPayment += _profit;
             _profit = 0;
-        }
-
-        if (toggles.checkDebtOutstanding) {
-            // final check to make sure accounting is correct
-            require(_debtOutstanding == _debtPayment.add(_loss));
         }
     }
 
@@ -232,6 +221,7 @@ contract Strategy is BaseStrategy {
         } else {
             _liquidatedAmount = _amountNeeded;
         }
+        require(_amountNeeded == _liquidatedAmount.add(_loss), "!sanitycheck");
     }
 
     function liquidateAllPositions() internal override returns (uint256 liquidated) {
@@ -401,9 +391,8 @@ contract Strategy is BaseStrategy {
         minDepositPeriod = _minDepositPeriod;
     }
 
-    function setToggles(bool _checkDebtOustanding, bool _doSellRewards) external onlyVaultManagers {
-        toggles.checkDebtOutstanding = _checkDebtOustanding;
-        toggles.doSellRewards = _doSellRewards;
+    function setDoSellRewards(bool _doSellRewards) external onlyVaultManagers {
+        doSellRewards = _doSellRewards;
     }
 
     function getSwapSteps() public view returns (SwapSteps[] memory){
