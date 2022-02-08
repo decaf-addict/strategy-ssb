@@ -225,7 +225,6 @@ contract Strategy is BaseStrategy {
     }
 
     function liquidateAllPositions() internal override returns (uint256 liquidated) {
-        uint totalDebt = vault.strategies(address(this)).totalDebt;
         _sellBpt(balanceOfBpt());
         liquidated = balanceOfWant();
         return liquidated;
