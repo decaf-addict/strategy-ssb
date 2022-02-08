@@ -257,29 +257,29 @@ contract Strategy is BaseStrategy {
 
     // HELPERS //
 
-    function withdrawFromMasterChef(uint256 _amount, uint256 _masterChefPooId) external onlyVaultManagers {
-        _withdrawFromMasterChef(address(this), _amount, _masterChefPooId);
+    function withdrawFromMasterChef(uint256 _amountBpt, uint256 _masterChefPooId) external onlyVaultManagers {
+        _withdrawFromMasterChef(address(this), _amountBpt, _masterChefPooId);
     }
 
     // AbandonRewards withdraws lp without rewards. Specify where to withdraw to
-    function _withdrawFromMasterChef(address _to, uint256 _amount, uint256 _masterChefPoolId) internal {
-        if (_amount > 0) {
+    function _withdrawFromMasterChef(address _to, uint256 _amountBpt, uint256 _masterChefPoolId) internal {
+        if (_amountBpt > 0) {
             toggles.abandonRewards
             ? masterChef.emergencyWithdraw(_masterChefPoolId, address(_to))
-            : masterChef.withdrawAndHarvest(_masterChefPoolId, _amount, address(_to));
+            : masterChef.withdrawAndHarvest(_masterChefPoolId, _amountBpt, address(_to));
         }
     }
 
     // Withdraw the desired amount in bpt from masterchef and sell it for want
-    function _withdrawFromMasterChefAndSellBpt(uint256 amount) internal {
+    function _withdrawFromMasterChefAndSellBpt(uint256 _amountBpt) internal {
         // don't try to withdraw more than what we have in masterchef
-        amount = Math.min(amount, balanceOfBptInMasterChef());
+        _amountBpt = Math.min(_amountBpt, balanceOfBptInMasterChef());
 
         // withdraw the desired amount out of masterchef
-        _withdrawFromMasterChef(address(this), amount, masterChefPoolId);
+        _withdrawFromMasterChef(address(this), _amountBpt, masterChefPoolId);
 
         // sell the desired amount for want
-        _sellBpt(amount, assets, tokenIndex, balancerPoolId, balanceOfBpt());
+        _sellBpt(_amountBpt, assets, tokenIndex, balancerPoolId, balanceOfBpt());
     }
 
 
