@@ -41,7 +41,6 @@ contract Strategy is BaseStrategy {
     }
 
     struct Toggles {
-        bool checkDebtOutstanding;
         bool doSellRewards;
         bool abandonRewards;
     }
@@ -130,6 +129,7 @@ contract Strategy is BaseStrategy {
         balancerPoolId = bpt.getPoolId();
         balancerVault = IBalancerVault(_balancerVault);
         (IERC20[] memory tokens,,) = balancerVault.getPoolTokens(balancerPoolId);
+        require(tokens.length > 0, "Empty Pool");
         numTokens = uint8(tokens.length);
         assets = new IAsset[](numTokens);
         tokenIndex = type(uint8).max;
@@ -156,7 +156,7 @@ contract Strategy is BaseStrategy {
         keep = governance();
         keepBips = 1000;
 
-        toggles = Toggles({checkDebtOutstanding : true, doSellRewards : true, abandonRewards : false});
+        toggles = Toggles({doSellRewards : true, abandonRewards : false});
     }
 
     // ******** OVERRIDE THESE METHODS FROM BASE CONTRACT ************
@@ -195,11 +195,6 @@ contract Strategy is BaseStrategy {
             _debtPayment += _profit;
             _profit = 0;
         }
-
-        if (toggles.checkDebtOutstanding) {
-            // final check to make sure accounting is correct
-            require(_debtOutstanding == _debtPayment.add(_loss));
-        }
     }
 
     function adjustPosition(uint256 _debtOutstanding) internal override {
@@ -228,6 +223,7 @@ contract Strategy is BaseStrategy {
         } else {
             _liquidatedAmount = _amountNeeded;
         }
+        require(_amountNeeded == _liquidatedAmount.add(_loss), "!sanitycheck");
     }
 
     function liquidateAllPositions() internal override returns (uint256 liquidated) {
@@ -436,8 +432,7 @@ contract Strategy is BaseStrategy {
         minDepositPeriod = _minDepositPeriod;
     }
 
-    function setToggles(bool _checkDebtOustanding, bool _doSellRewards, bool _abandon) external onlyVaultManagers {
-        toggles.checkDebtOutstanding = _checkDebtOustanding;
+    function setToggles(bool _doSellRewards, bool _abandon) external onlyVaultManagers {
         toggles.doSellRewards = _doSellRewards;
         toggles.abandonRewards = _abandon;
     }
