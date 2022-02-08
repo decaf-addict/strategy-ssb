@@ -180,17 +180,17 @@ contract Strategy is BaseStrategy {
         _profit = afterWant.sub(beforeWant);
         if (_profit > _loss) {
             _profit = _profit.sub(_loss);
-            _debtPayment += _loss;
+            _debtPayment = _debtPayment.add(_loss);
             _loss = 0;
         } else {
             _loss = _loss.sub(_profit);
-            _debtPayment += _profit;
+            _debtPayment = _debtPayment.add(_profit);
             _profit = 0;
         }
     }
 
     function adjustPosition(uint256 _debtOutstanding) internal override {
-        if (now - lastDepositTime < minDepositPeriod) {
+        if (now.sub(lastDepositTime) < minDepositPeriod) {
             return;
         }
 
@@ -237,7 +237,7 @@ contract Strategy is BaseStrategy {
             IERC20 token = rewardTokens[i];
             uint256 balance = token.balanceOf(address(this));
             if (balance > 0) {
-                token.transfer(_newStrategy, balance);
+                token.safeTransfer(_newStrategy, balance);
             }
         }
     }
@@ -314,20 +314,20 @@ contract Strategy is BaseStrategy {
 
     /// use bpt rate to estimate equivalent amount of want.
     function bptsToTokens(uint _amountBpt) public view returns (uint _amount){
-        uint unscaled = _amountBpt * bpt.getRate() / 1e18;
+        uint unscaled = _amountBpt.mul(bpt.getRate()).div(1e18);
         return _scaleDecimals(unscaled, ERC20(address(bpt)), ERC20(address(want)));
     }
 
 
     function tokensToBpts(uint _amountTokens) public view returns (uint _amount){
-        uint unscaled = _amountTokens * 1e18 / bpt.getRate();
+        uint unscaled = _amountTokens.mul(1e18).div(bpt.getRate());
         return _scaleDecimals(unscaled, ERC20(address(want)), ERC20(address(bpt)));
     }
 
     function _scaleDecimals(uint _amount, ERC20 _fromToken, ERC20 _toToken) internal view returns (uint _scaled){
         uint decFrom = _fromToken.decimals();
         uint decTo = _toToken.decimals();
-        return decTo > decFrom ? _amount * 10 ** (decTo.sub(decFrom)) : _amount / 10 ** (decFrom.sub(decTo));
+        return decTo > decFrom ? _amount.mul(10 ** (decTo.sub(decFrom))) : _amount.div(10 ** (decFrom.sub(decTo)));
     }
 
     function _getSwapRequest(IERC20 token, uint256 amount, uint256 lastChangeBlock) internal view returns (IBalancerPool.SwapRequest memory request){
