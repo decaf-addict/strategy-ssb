@@ -3,7 +3,7 @@ from brownie import Contract
 
 def airdrop_rewards(strategy, beets, beets_whale):
     beets.approve(strategy, 2 ** 256 - 1, {'from': beets_whale})
-    beets.transfer(strategy, 10_000 * 1e18, {'from': beets_whale})
+    beets.transfer(strategy, 8_000 * 1e18, {'from': beets_whale})
 
 
 def stateOfStrat(msg, strategy, token):
