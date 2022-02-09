@@ -26,6 +26,7 @@ def main():
                     tokens_data = data["tokens_data"]
                     distributionId = config["week"] - config["offset"]
 
+                    print(f'Week: {config["week"]}')
                     for token_data in tokens_data:
                         name = ""
                         try:
@@ -38,5 +39,8 @@ def main():
                                   reward[2],
                                   0,
                                   token_data["hex_proof"])]
-                        merkleOrchard.claimDistributions(token_data["address"], claim, [reward[1]], {'from': dev})
-                        print(f'{name} claimed {int(token_data["claim_amount"]) / 1e18} {reward[3]} ')
+                        claimed = merkleOrchard.isClaimed(bal, bal_distributor, distributionId, token_data["address"])
+                        print(f"claimed: {claimed}")
+                        if not claimed:
+                            merkleOrchard.claimDistributions(token_data["address"], claim, [reward[1]], {'from': dev})
+                            print(f'{name} claimed {int(token_data["claim_amount"]) / 1e18} {reward[3]} ')
