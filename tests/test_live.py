@@ -221,6 +221,7 @@ def test_clone_wbtc_then_migration(
     assert pps_after > pps_before
     assert vault.strategies(fixed_strategy)["totalLoss"] == 0
 
+
 # clone fixed_dai to fixed_weth, migrate old_weth to fixed_weth
 def test_clone_weth_then_migration(
         chain,
@@ -269,12 +270,11 @@ def test_clone_weth_then_migration(
     total_debt = vault.strategies(fixed_strategy)["totalDebt"]
     assert fixed_strategy.estimatedTotalAssets() >= total_debt
 
-    # exit everything out and see how much we get
-    fixed_strategy.setEmergencyExit(fromGov)
+    current_debt_ratio = vault.strategies(fixed_strategy)["debtRatio"]
+    # exit a % out to test accounting and basic operation
+    fixed_strategy.setParams(10, 10, fixed_strategy.maxSingleDeposit(), fixed_strategy.minDepositPeriod(), fromGov)
     fixed_strategy.harvest(fromGov)
 
-    util.stateOfStrat("debt ratio 0", fixed_strategy, token)
+    util.stateOfStrat("same dr, returned some debtOutstanding", fixed_strategy, token)
 
-    # hopefully the gains from trading fees cancels out slippage
-    print(f'net loss from exit: {vault.strategies(fixed_strategy)["totalLoss"]}')
-    assert fixed_strategy.estimatedTotalAssets() == 0
+    # nothing to assert here. Harvest went through and didn't revert. We'll have to be careful with amount to exit
