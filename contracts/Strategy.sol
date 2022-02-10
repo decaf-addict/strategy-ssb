@@ -7,15 +7,13 @@ pragma experimental ABIEncoderV2;
 
 // These are the core Yearn libraries
 import {BaseStrategy, StrategyParams} from "@yearnvaults/contracts/BaseStrategy.sol";
-import {SafeERC20, SafeMath, IERC20, Address} from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
+import {Address} from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Math} from "@openzeppelin/contracts/math/Math.sol";
 import "../interfaces/BalancerV2.sol";
 import "../interfaces/MasterChef.sol";
 
 contract Strategy is BaseStrategy {
-    using SafeERC20 for IERC20;
-    using SafeMath for uint256;
 
     IBalancerVault public balancerVault;
     IBalancerPool public bpt;
@@ -239,11 +237,11 @@ contract Strategy is BaseStrategy {
         _withdrawFromMasterChef(_newStrategy, balanceOfBptInMasterChef(), masterChefPoolId);
         uint256 _balanceOfBpt = balanceOfBpt();
         if (_balanceOfBpt > 0) {
-            bpt.transfer(_newStrategy, _balanceOfBpt);
+            bpt.safeTransfer(_newStrategy, _balanceOfBpt);
         }
         uint256 rewards = balanceOfReward();
         if (rewards > 0) {
-            rewardToken.transfer(_newStrategy, rewards);
+            rewardToken.safeTransfer(_newStrategy, rewards);
         }
     }
 
@@ -289,7 +287,7 @@ contract Strategy is BaseStrategy {
         masterChef.harvest(masterChefPoolId, address(this));
         uint256 keepBal = balanceOfReward().sub(rewardBal).mul(keepBips).div(basisOne);
         if (keepBal > 0) {
-            rewardToken.transfer(keep, keepBal);
+            rewardToken.safeTransfer(keep, keepBal);
         }
     }
 
