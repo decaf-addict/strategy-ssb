@@ -32,7 +32,6 @@ def test_migration(
 
 def test_real_migration(
         chain,
-        token,
         vault,
         amount,
         Strategy,
@@ -44,6 +43,7 @@ def test_real_migration(
         balancer_vault, pool, management, swapStepsBeets, beets
 ):
     old = Contract("0x56aF79e182a7f98ff6d0bF99d589ac2CabA24e2d")
+    token = Contract(old.want())
     vault = Contract(old.vault())
     gov = accounts.at(vault.governance(), force=True)
     fromGov = {'from': gov}
@@ -66,10 +66,21 @@ def test_real_migration(
 
     # this lets gov sweep and take x% cut
     assert beets.balanceOf(fixed_strategy) >= old_pending
+    print(f'vault state: {vault.strategies(fixed_strategy)}')
 
-    # exit everything out and see how much we get
+    fixed_strategy.tend(fromGov)
+    print(f'vault state: {vault.strategies(fixed_strategy)}')
+
+    util.stateOfStrat("old strategy after harvest", old, token)
+    util.stateOfStrat("new strategy after harvest", fixed_strategy, token)
+
+    # sell everything
     fixed_strategy.setEmergencyExit(fromGov)
+    # rewards sold separately
+    fixed_strategy.sellRewards(fromGov)
     fixed_strategy.harvest(fromGov)
+
+    print(f'vault state: {vault.strategies(fixed_strategy)}')
 
     util.stateOfStrat("debt ratio 0", fixed_strategy, token)
 

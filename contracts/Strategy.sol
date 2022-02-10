@@ -167,6 +167,7 @@ contract Strategy is BaseStrategy {
         return balanceOfWant().add(balanceOfPooled());
     }
 
+
     function prepareReturn(uint256 _debtOutstanding) internal override returns (uint256 _profit, uint256 _loss, uint256 _debtPayment){
         if (_debtOutstanding > 0) {
             (_debtPayment, _loss) = liquidatePosition(_debtOutstanding);
@@ -201,9 +202,11 @@ contract Strategy is BaseStrategy {
         }
 
         // put want into lp then put want-lp into masterchef
-        if (_joinPool()) {
+        _joinPool();
+        uint bpts = balanceOfBpt();
+        if (bpts > 0) {
             // put all want-lp into masterchef
-            masterChef.deposit(masterChefPoolId, balanceOfBpt(), address(this));
+            masterChef.deposit(masterChefPoolId, bpts, address(this));
         }
     }
 
@@ -212,7 +215,6 @@ contract Strategy is BaseStrategy {
         if (_amountNeeded > looseAmount) {
             // convert amount still needed to bpt
             uint256 toExitAmount = tokensToBpts(_amountNeeded.sub(looseAmount));
-
             // withdraw needed bpt out of masterchef and sell it for want
             _withdrawFromMasterChefAndSellBpt(toExitAmount);
 
@@ -289,6 +291,10 @@ contract Strategy is BaseStrategy {
         if (keepBal > 0) {
             rewardToken.safeTransfer(keep, keepBal);
         }
+    }
+
+    function sellRewards() external onlyVaultManagers {
+        _sellRewards();
     }
 
     function _sellRewards() internal {
