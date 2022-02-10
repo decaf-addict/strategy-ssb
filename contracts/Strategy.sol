@@ -237,7 +237,7 @@ contract Strategy is BaseStrategy {
         _withdrawFromMasterChef(_newStrategy, balanceOfBptInMasterChef(), masterChefPoolId);
         uint256 _balanceOfBpt = balanceOfBpt();
         if (_balanceOfBpt > 0) {
-            bpt.safeTransfer(_newStrategy, _balanceOfBpt);
+            bpt.transfer(_newStrategy, _balanceOfBpt);
         }
         uint256 rewards = balanceOfReward();
         if (rewards > 0) {
