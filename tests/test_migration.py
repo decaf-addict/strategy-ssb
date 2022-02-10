@@ -2,6 +2,7 @@ import pytest
 from brownie import accounts, Contract
 import util
 
+
 def test_migration(
         chain,
         token,
@@ -30,6 +31,7 @@ def test_migration(
     vault.migrateStrategy(strategy, new_strategy, {"from": gov})
     assert (pytest.approx(new_strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount)
 
+
 def test_real_migration(
         chain,
         vault,
@@ -50,7 +52,8 @@ def test_real_migration(
 
     util.stateOfStrat("old strategy before migration", old, token)
 
-    fixed_strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, masterChef,5, 5, 100_000, 2 * 60 * 60, 33)
+    fixed_strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, masterChef, 5, 5, 100_000, 2 * 60 * 60,
+                                       33)
     fixed_strategy.whitelistReward(beets, swapStepsBeets, fromGov)
 
     # steady beets 2 pool = #33
@@ -68,7 +71,7 @@ def test_real_migration(
     assert beets.balanceOf(fixed_strategy) >= old_pending
     print(f'vault state: {vault.strategies(fixed_strategy)}')
 
-    fixed_strategy.tend(fromGov)
+    fixed_strategy.depositIntoMasterChef(fixed_strategy.balanceOfBpt(), fromGov)
     print(f'vault state: {vault.strategies(fixed_strategy)}')
 
     util.stateOfStrat("old strategy after harvest", old, token)

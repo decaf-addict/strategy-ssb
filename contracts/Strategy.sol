@@ -202,12 +202,18 @@ contract Strategy is BaseStrategy {
         }
 
         // put want into lp then put want-lp into masterchef
-        _joinPool();
-        uint bpts = balanceOfBpt();
-        if (bpts > 0) {
+        if (_joinPool()) {
             // put all want-lp into masterchef
-            masterChef.deposit(masterChefPoolId, bpts, address(this));
+            _depositIntoMasterChef(balanceOfBpt());
         }
+    }
+
+    function depositIntoMasterChef(uint _bpts) external onlyVaultManagers {
+        _depositIntoMasterChef(_bpts);
+    }
+
+    function _depositIntoMasterChef(uint _bpts) internal {
+        masterChef.deposit(masterChefPoolId, _bpts, address(this));
     }
 
     function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _liquidatedAmount, uint256 _loss){
