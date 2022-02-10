@@ -30,42 +30,6 @@ def test_migration(
     vault.migrateStrategy(strategy, new_strategy, {"from": gov})
     assert (pytest.approx(new_strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount)
 
-
-def test_masterchef(
-        chain,
-        token,
-        vault,
-        strategy,
-        amount,
-        Strategy,
-        strategist,
-        gov,
-        user,
-        RELATIVE_APPROX,
-        balancer_vault,
-        pool,
-        masterChef
-):
-    # Deposit to the vault and harvest
-    token.approve(vault.address, amount, {"from": user})
-    vault.deposit(amount, {"from": user})
-    chain.sleep(1)
-    strategy.harvest({"from": gov})
-    assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount
-
-    chain.mine(3)
-    strategy.tend({"from": gov})
-
-    oldMasterChef = Contract(strategy.masterChef())
-    mcpID = strategy.masterChefPoolId()
-
-    prevBptBalanceInMasterChef = strategy.balanceOfBptInMasterChef()
-    strategy.setMasterChef(masterChef, {"from": gov})
-
-    #new masterchef should have all the bpt deposited
-    assert strategy.balanceOfBptInMasterChef() == prevBptBalanceInMasterChef
-
-
 def test_real_migration(
         chain,
         token,

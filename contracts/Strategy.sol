@@ -440,19 +440,6 @@ contract Strategy is BaseStrategy {
         return swapSteps;
     }
 
-    // masterchef contract in case of masterchef migration
-    function setMasterChef(address _masterChef) public onlyGovernance {
-        // withdraw all bpt from masterchef before migration
-        _withdrawFromMasterChef(address(this), balanceOfBptInMasterChef(), masterChefPoolId);
-
-        bpt.approve(address(masterChef), 0);
-        masterChef = IBeethovenxMasterChef(_masterChef);
-        bpt.approve(address(masterChef), max);
-
-        // deposit bpt in new masterchef
-        masterChef.deposit(masterChefPoolId, balanceOfBpt(), address(this));
-    }
-
     function setKeepParams(address _keep, uint _keepBips) external onlyGovernance {
         require(keepBips <= basisOne);
         keep = _keep;
