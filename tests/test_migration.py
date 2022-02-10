@@ -34,7 +34,6 @@ def test_real_migration(
         chain,
         token,
         vault,
-        strategy,
         amount,
         Strategy,
         strategist,
@@ -49,17 +48,24 @@ def test_real_migration(
     gov = accounts.at(vault.governance(), force=True)
     fromGov = {'from': gov}
 
-    util.stateOfStrat("old strategy before migration", strategy, token)
+    util.stateOfStrat("old strategy before migration", old, token)
 
     fixed_strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, masterChef,5, 5, 100_000, 2 * 60 * 60, 33)
     fixed_strategy.whitelistReward(beets, swapStepsBeets, fromGov)
 
+    # steady beets 2 pool = #33
+    old_pending = masterChef.pendingBeets(33, old)
+    print(f'pending beets from old strategy: {old_pending}')
+
     vault.migrateStrategy(old, fixed_strategy, fromGov)
-    util.stateOfStrat("old strategy after migration", strategy, token)
+    util.stateOfStrat("old strategy after migration", old, token)
     util.stateOfStrat("new strategy after migration", fixed_strategy, token)
 
     total_debt = vault.strategies(fixed_strategy)["totalDebt"]
     assert fixed_strategy.estimatedTotalAssets() >= total_debt
+
+    # this lets gov sweep and take x% cut
+    assert beets.balanceOf(fixed_strategy) >= old_pending
 
     # exit everything out and see how much we get
     fixed_strategy.setEmergencyExit(fromGov)
