@@ -42,8 +42,7 @@ contract StrategyFactory {
         return
         string(
             abi.encodePacked(
-                "Factory",
-                Strategy(payable(original)).name(),
+                "Factory", "ssbV2",
                 "@",
                 Strategy(payable(original)).apiVersion()
             )

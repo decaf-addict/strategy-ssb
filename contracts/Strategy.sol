@@ -235,7 +235,7 @@ contract Strategy is BaseStrategy {
     function liquidateAllPositions() internal override returns (uint256 liquidated) {
         _withdrawFromMasterChef(address(this), balanceOfBptInMasterChef(), masterChefPoolId);
         // sell all bpt
-        _sellBpt(balanceOfBpt(), assets, tokenIndex, balancerPoolId, balanceOfBpt());
+        _sellBpt(balanceOfBpt(), assets, tokenIndex, balancerPoolId);
         liquidated = balanceOfWant();
         return liquidated;
     }
@@ -285,7 +285,7 @@ contract Strategy is BaseStrategy {
         _withdrawFromMasterChef(address(this), _amountBpt, masterChefPoolId);
 
         // sell the desired amount for want
-        _sellBpt(_amountBpt, assets, tokenIndex, balancerPoolId, balanceOfBpt());
+        _sellBpt(_amountBpt, assets, tokenIndex, balancerPoolId);
     }
 
 
