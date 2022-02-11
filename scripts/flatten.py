@@ -3,6 +3,8 @@ from brownie import Strategy, StrategyFactory, accounts, config, network, projec
 
 def main():
     with open('./build/contracts/StrategyFlat.sol', 'w') as f:
-        f.write(Strategy.get_verification_info()['flattened_source'])
+        Strategy.get_verification_info()
+        f.write(Strategy._flattener.flattened_source)
     with open('./build/contracts/StrategyFactoryFlat.sol', 'w') as f:
-        f.write(StrategyFactory.get_verification_info()['flattened_source'])
+        StrategyFactory.get_verification_info()
+        f.write(StrategyFactory._flattener.flattened_source)

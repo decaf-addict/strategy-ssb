@@ -392,12 +392,12 @@ contract Strategy is BaseStrategy {
     }
 
     // this allows us to also sell stakedBpts externally
-    function sellBpt(uint256 _amountBpts, IAsset[] memory _assets, uint256 _tokenIndex, bytes32 _balancerPoolId, uint256 _maxBpts) external onlyVaultManagers {
-        _sellBpt(_amountBpts, _assets, _tokenIndex, _balancerPoolId, _maxBpts);
+    function sellBpt(uint256 _amountBpts, IAsset[] memory _assets, uint256 _tokenIndex, bytes32 _balancerPoolId) external onlyVaultManagers {
+        _sellBpt(_amountBpts, _assets, _tokenIndex, _balancerPoolId);
     }
 
     // sell bpt for want at current bpt rate
-    function _sellBpt(uint256 _amountBpts, IAsset[] memory _assets, uint256 _tokenIndex, bytes32 _balancerPoolId, uint256 _maxBpts) internal {
+    function _sellBpt(uint256 _amountBpts, IAsset[] memory _assets, uint256 _tokenIndex, bytes32 _balancerPoolId) internal {
         _amountBpts = Math.min(_amountBpts, balanceOfBpt());
         if (_amountBpts > 0) {
             uint256[] memory minAmountsOut = new uint256[](numTokens);
