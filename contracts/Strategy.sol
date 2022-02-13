@@ -169,30 +169,40 @@ contract Strategy is BaseStrategy {
 
 
     function prepareReturn(uint256 _debtOutstanding) internal override returns (uint256 _profit, uint256 _loss, uint256 _debtPayment){
-        if (_debtOutstanding > 0) {
-            (_debtPayment, _loss) = liquidatePosition(_debtOutstanding);
-        }
-
-        uint256 beforeWant = balanceOfWant();
-
-        _collectTradingFees();
-        // claim beets
         _claimRewards();
-        // this would allow finer control over harvesting to get credits in without selling
         if (toggles.doSellRewards) {
             _sellRewards();
         }
 
-        uint256 afterWant = balanceOfWant();
-        _profit = afterWant.sub(beforeWant);
-        if (_profit > _loss) {
-            _profit = _profit.sub(_loss);
-            _debtPayment = _debtPayment.add(_loss);
-            _loss = 0;
-        } else {
+        uint256 totalDebt = vault.strategies(address(this)).totalDebt;
+        uint256 totalAssetsAfterProfit = estimatedTotalAssets();
+
+        _profit = totalAssetsAfterProfit > totalDebt
+            ? totalAssetsAfterProfit.sub(totalDebt)
+            : 0;
+
+        uint256 _amountFreed;
+        uint256 _toLiquidate = _debtOutstanding.add(_profit);
+        if (_toLiquidate > 0) {
+            (_amountFreed, _loss) = liquidatePosition(_toLiquidate);
+        }
+
+        _debtPayment = Math.min(_debtOutstanding, _amountFreed);
+
+        if (_loss > _profit) {
+            // Example:
+            // debtOutstanding 100, profit 50, _amountFreed 100, _loss 50
+            // loss should be 0, (50-50)
+            // profit should endup in 0
             _loss = _loss.sub(_profit);
-            _debtPayment = _debtPayment.add(_profit);
             _profit = 0;
+        } else {
+            // Example:
+            // debtOutstanding 100, profit 50, _amountFreed 140, _loss 10
+            // _profit should be 40, (50 profit - 10 loss)
+            // loss should end up in 0
+            _profit = _profit.sub(_loss);
+            _loss = 0;
         }
     }
 
@@ -275,8 +285,8 @@ contract Strategy is BaseStrategy {
                 masterChef.emergencyWithdraw(_masterChefPoolId, address(_to));
             }
             else{
-                masterChef.withdrawAndHarvest(_masterChefPoolId, balanceOfBptInMasterChef(), address(_to));
-                _depositIntoMasterChef(balanceOfBpt() - _amountBpt);
+                masterChef.withdrawAndHarvest(_masterChefPoolId, _amountBpt, address(_to));
+                /* _depositIntoMasterChef(balanceOfBpt() - _amountBpt); */
             }
         }
     }
