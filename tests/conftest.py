@@ -10,7 +10,10 @@ def isolation(fn_isolation):
 
 @pytest.fixture
 def gov(accounts):
-    yield accounts.at("0xFEB4acf3df3cDEA7399794D0869ef76A6EfAff52", force=True)
+    if chain.id == 1:
+        yield accounts.at("0xFEB4acf3df3cDEA7399794D0869ef76A6EfAff52", force=True)
+    if chain.id == 250:
+        yield accounts.at("0xC0E2830724C946a6748dDFE09753613cd38f6767", force=True)
 
 
 @pytest.fixture

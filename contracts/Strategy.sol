@@ -269,10 +269,15 @@ contract Strategy is BaseStrategy {
 
     // AbandonRewards withdraws lp without rewards. Specify where to withdraw to
     function _withdrawFromMasterChef(address _to, uint256 _amountBpt, uint256 _masterChefPoolId) internal {
+        _amountBpt = Math.min(balanceOfBptInMasterChef(), _amountBpt);
         if (_amountBpt > 0) {
-            toggles.abandonRewards
-            ? masterChef.emergencyWithdraw(_masterChefPoolId, address(_to))
-            : masterChef.withdrawAndHarvest(_masterChefPoolId, _amountBpt, address(_to));
+            if(toggles.abandonRewards){
+                masterChef.emergencyWithdraw(_masterChefPoolId, address(_to));
+            }
+            else{
+                masterChef.withdrawAndHarvest(_masterChefPoolId, balanceOfBptInMasterChef(), address(_to));
+                _depositIntoMasterChef(balanceOfBpt() - _amountBpt);
+            }
         }
     }
 
@@ -291,11 +296,13 @@ contract Strategy is BaseStrategy {
 
     // claim all beets rewards from masterchef
     function _claimRewards() internal {
-        uint256 rewardBal = balanceOfReward();
-        masterChef.harvest(masterChefPoolId, address(this));
-        uint256 keepBal = balanceOfReward().sub(rewardBal).mul(keepBips).div(basisOne);
-        if (keepBal > 0) {
-            rewardToken.safeTransfer(keep, keepBal);
+        if(getPendingBeets() > 0){
+            uint256 rewardBal = balanceOfReward();
+            masterChef.harvest(masterChefPoolId, address(this));
+            uint256 keepBal = balanceOfReward().sub(rewardBal).mul(keepBips).div(basisOne);
+            if (keepBal > 0) {
+                rewardToken.safeTransfer(keep, keepBal);
+            }
         }
     }
 
@@ -350,6 +357,10 @@ contract Strategy is BaseStrategy {
 
     function balanceOfBptInMasterChef() public view returns (uint256 _amount){
         (_amount,) = masterChef.userInfo(masterChefPoolId, address(this));
+    }
+
+    function getPendingBeets() public view returns (uint256){
+        return masterChef.pendingBeets(masterChefPoolId, address(this));
     }
 
     function balanceOfReward() public view returns (uint256 _amount){
