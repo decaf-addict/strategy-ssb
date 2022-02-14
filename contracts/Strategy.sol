@@ -288,7 +288,6 @@ contract Strategy is BaseStrategy {
             }
             else {
                 masterChef.withdrawAndHarvest(_masterChefPoolId, _amountBpt, address(_to));
-                /* _depositIntoMasterChef(balanceOfBpt() - _amountBpt); */
             }
         }
     }
@@ -346,16 +345,6 @@ contract Strategy is BaseStrategy {
                 IBalancerVault.FundManagement(address(this), false, address(this), false),
                 limits,
                 now + 10);
-        }
-    }
-
-    function _collectTradingFees() internal {
-        uint256 total = estimatedTotalAssets();
-        uint256 debt = vault.strategies(address(this)).totalDebt;
-        // if there is a profit from trading fees, we sell it for want
-        if (total > debt) {
-            uint256 profit = total.sub(debt);
-            _withdrawFromMasterChefAndSellBpt(tokensToBpts(profit));
         }
     }
 
