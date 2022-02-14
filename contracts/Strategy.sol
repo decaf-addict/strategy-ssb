@@ -180,8 +180,8 @@ contract Strategy is BaseStrategy {
         uint256 totalAssetsAfterProfit = estimatedTotalAssets();
 
         _profit = totalAssetsAfterProfit > totalDebt
-        ? totalAssetsAfterProfit.sub(totalDebt)
-        : 0;
+            ? totalAssetsAfterProfit.sub(totalDebt)
+            : 0;
 
         uint256 _amountFreed;
         uint256 _toLiquidate = _debtOutstanding.add(_profit);
