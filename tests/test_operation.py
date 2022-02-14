@@ -231,6 +231,7 @@ def test_triggers(
     strategy.harvestTrigger(0)
     strategy.tendTrigger(0)
 
+
 # simulate a bad deposit, aka pool has too much of the want you're trying to deposit already
 def test_unbalance_deposit(chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, token2_whale,
                            token2, token_whale, gov, pool, balancer_vault):
@@ -239,7 +240,7 @@ def test_unbalance_deposit(chain, token, vault, strategy, user, strategist, amou
     assert token.balanceOf(vault.address) == amount
 
     print(f'pool rate before whale swap: {pool.getRate()}')
-    pooled = balancer_vault.getPoolTokens(pool.getPoolId())[1][strategy.tokenIndex()]
+    pooled = balancer_vault.getPoolTokens(pool.getPoolId())[1][0]
     token.approve(balancer_vault, 2 ** 256 - 1, {'from': token_whale})
     chain.snapshot()
 
@@ -259,7 +260,7 @@ def test_unbalance_deposit(chain, token, vault, strategy, user, strategist, amou
     # simulate bad pool state by whale to swap out 98% of one side of the pool so pool only has excess want
     singleSwap = (pool.getPoolId(), 1, token, token2, pooled2 * 0.98, b'0x0')
     balancer_vault.swap(singleSwap, (token_whale, False, token_whale, False), token.balanceOf(token_whale),
-                        chain.time(), {'from': token_whale})
+                        2 ** 256 - 1, {'from': token_whale})
     print(balancer_vault.getPoolTokens(pool.getPoolId()))
     print(f'pool rate: {pool.getRate()}')
 
@@ -306,7 +307,7 @@ def test_unbalanced_pool_withdraw(chain, token, vault, strategy, user, strategis
         token2Index = 1
 
     util.stateOfStrat("after deposit all    ", strategy, token)
-    pooled = balancer_vault.getPoolTokens(pool.getPoolId())[1][strategy.tokenIndex()]
+    pooled = balancer_vault.getPoolTokens(pool.getPoolId())[1][0]
     print(balancer_vault.getPoolTokens(pool.getPoolId()))
     print(f'pooled: {pooled}')
     token2.approve(balancer_vault, 2 ** 256 - 1, {'from': token2_whale})
@@ -314,7 +315,7 @@ def test_unbalanced_pool_withdraw(chain, token, vault, strategy, user, strategis
     # simulate bad pool state by whale to swap out 98% of one side of the pool so pool only has 2% of the original want
     singleSwap = (pool.getPoolId(), 1, token2, token, pooled * 0.98, b'0x0')
     balancer_vault.swap(singleSwap, (token2_whale, False, token2_whale, False), token2.balanceOf(token2_whale),
-                        chain.time(), {'from': token2_whale})
+                        2 ** 256 - 1, {'from': token2_whale})
     print(balancer_vault.getPoolTokens(pool.getPoolId()))
     print(f'pool rate: {pool.getRate()}')
 

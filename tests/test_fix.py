@@ -66,6 +66,7 @@ def test_real_migration_and_multiple_harvest(
         fromGov
     )
     fixed_strategy.setDoHealthCheck(False, fromGov)
+    chain.sleep(1)
     fixed_strategy.harvest(fromGov)
 
     print(f'vault state: {vault.strategies(fixed_strategy)}')
