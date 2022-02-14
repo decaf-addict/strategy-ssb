@@ -282,12 +282,9 @@ contract Strategy is BaseStrategy {
     function _withdrawFromMasterChef(address _to, uint256 _amountBpt, uint256 _masterChefPoolId) internal {
         _amountBpt = Math.min(balanceOfBptInMasterChef(), _amountBpt);
         if (_amountBpt > 0) {
-            if (toggles.abandonRewards) {
-                masterChef.emergencyWithdraw(_masterChefPoolId, address(_to));
-            }
-            else {
-                masterChef.withdrawAndHarvest(_masterChefPoolId, _amountBpt, address(_to));
-            }
+            toggles.abandonRewards
+                ? masterChef.emergencyWithdraw(_masterChefPoolId, address(_to))
+                : masterChef.withdrawAndHarvest(_masterChefPoolId, _amountBpt, address(_to));
         }
     }
 
