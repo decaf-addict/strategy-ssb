@@ -249,7 +249,6 @@ contract Strategy is BaseStrategy {
         // sell all bpt
         _sellBpt(balanceOfBpt(), assets, tokenIndex, balancerPoolId);
         liquidated = balanceOfWant();
-        return liquidated;
     }
 
     // note that this withdraws into newStrategy.
