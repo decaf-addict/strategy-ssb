@@ -26,7 +26,7 @@ def test_real_migration_and_multiple_harvest(
                                        33)
     fixed_strategy.whitelistReward(beets, swapStepsBeets, fromGov)
 
-    
+
 
     # steady beets 2 pool = #33
     old_pending = masterChef.pendingBeets(33, old)
@@ -51,21 +51,22 @@ def test_real_migration_and_multiple_harvest(
 
     tx = fixed_strategy.harvest(fromGov)
     tx = fixed_strategy.harvest(fromGov)
-    
+
     # sell everything
-    # fixed_strategy.setEmergencyExit(fromGov)
-    fixed_strategy.updateStrategyDebtRatio(0,fromGov)
+    fixed_strategy.setEmergencyExit(fromGov)
+    # fixed_strategy.updateStrategyDebtRatio(0,fromGov)
     # rewards sold separately
-    fixed_strategy.sellRewards(fromGov)
+    # fixed_strategy.sellRewards(fromGov)
 
     fixed_strategy.setParams(
-        5_000,
-        5_000,
+        2_000,
+        2_000,
         fixed_strategy.maxSingleDeposit(),
         fixed_strategy.minDepositPeriod(),
         fromGov
     )
     fixed_strategy.setDoHealthCheck(False, fromGov)
+    chain.sleep(1)
     fixed_strategy.harvest(fromGov)
 
     print(f'vault state: {vault.strategies(fixed_strategy)}')

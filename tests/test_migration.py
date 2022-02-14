@@ -1,6 +1,7 @@
 import pytest
 from brownie import accounts, Contract
 import util
+import brownie
 
 
 def test_migration(
@@ -44,7 +45,7 @@ def test_real_migration(
         RELATIVE_APPROX,
         balancer_vault, pool, management, swapStepsBeets, beets
 ):
-    old = Contract("0x56aF79e182a7f98ff6d0bF99d589ac2CabA24e2d")
+    old = Contract("0xF864f92e88054AA05639324090b411C1D55B4a5B")
     token = Contract(old.want())
     vault = Contract(old.vault())
     gov = accounts.at(vault.governance(), force=True)
@@ -61,9 +62,9 @@ def test_real_migration(
     print(f'pending beets from old strategy: {old_pending}')
 
     vault.migrateStrategy(old, fixed_strategy, fromGov)
+    fixed_strategy.depositIntoMasterChef(fixed_strategy.balanceOfBptInMasterChef(), fromGov)
     util.stateOfStrat("old strategy after migration", old, token)
     util.stateOfStrat("new strategy after migration", fixed_strategy, token)
-
     total_debt = vault.strategies(fixed_strategy)["totalDebt"]
     assert fixed_strategy.estimatedTotalAssets() >= total_debt
 
@@ -81,6 +82,11 @@ def test_real_migration(
     fixed_strategy.setEmergencyExit(fromGov)
     # rewards sold separately
     fixed_strategy.sellRewards(fromGov)
+    with brownie.reverts():
+        fixed_strategy.harvest(fromGov)
+
+    fixed_strategy.setParams(fixed_strategy.maxSlippageIn(), 10000, fixed_strategy.maxSingleDeposit(), fixed_strategy.minDepositPeriod(), fromGov)
+    chain.sleep(1)
     fixed_strategy.harvest(fromGov)
 
     print(f'vault state: {vault.strategies(fixed_strategy)}')
