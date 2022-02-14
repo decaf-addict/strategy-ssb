@@ -21,8 +21,8 @@ contract Strategy is BaseStrategy {
     IAsset[] internal assets;
     SwapSteps internal swapSteps;
     bytes32 public balancerPoolId;
-    uint8 public numTokens;
-    uint8 public tokenIndex;
+    uint8 internal numTokens;
+    uint8 internal tokenIndex;
     Toggles public toggles;
 
     // The keep mechanism is intended for governance voting purposes. Strategy will route a percentage (default 10%)
@@ -39,6 +39,7 @@ contract Strategy is BaseStrategy {
     }
 
     struct Toggles {
+        bool claimRewards;
         bool doSellRewards;
         bool abandonRewards;
     }
@@ -127,7 +128,7 @@ contract Strategy is BaseStrategy {
         balancerPoolId = bpt.getPoolId();
         balancerVault = IBalancerVault(_balancerVault);
         (IERC20[] memory tokens,,) = balancerVault.getPoolTokens(balancerPoolId);
-        require(tokens.length > 0, "Empty Pool");
+        require(tokens.length > 0, "empty");
         numTokens = uint8(tokens.length);
         assets = new IAsset[](numTokens);
         tokenIndex = type(uint8).max;
@@ -137,7 +138,7 @@ contract Strategy is BaseStrategy {
             }
             assets[i] = IAsset(address(tokens[i]));
         }
-        require(tokenIndex != type(uint8).max, "token not in pool!");
+        require(tokenIndex != type(uint8).max, "!inPool");
 
         maxSlippageIn = _maxSlippageIn;
         maxSlippageOut = _maxSlippageOut;
@@ -154,7 +155,7 @@ contract Strategy is BaseStrategy {
         keep = governance();
         keepBips = 1000;
 
-        toggles = Toggles({doSellRewards : true, abandonRewards : false});
+        toggles = Toggles({claimRewards : true, doSellRewards : true, abandonRewards : false});
     }
 
     // ******** OVERRIDE THESE METHODS FROM BASE CONTRACT ************
@@ -167,9 +168,10 @@ contract Strategy is BaseStrategy {
         return balanceOfWant().add(balanceOfPooled());
     }
 
-
     function prepareReturn(uint256 _debtOutstanding) internal override returns (uint256 _profit, uint256 _loss, uint256 _debtPayment){
-        _claimRewards();
+        if(toggles.claimRewards){
+            _claimRewards();
+        }
         if (toggles.doSellRewards) {
             _sellRewards();
         }
@@ -178,8 +180,8 @@ contract Strategy is BaseStrategy {
         uint256 totalAssetsAfterProfit = estimatedTotalAssets();
 
         _profit = totalAssetsAfterProfit > totalDebt
-            ? totalAssetsAfterProfit.sub(totalDebt)
-            : 0;
+        ? totalAssetsAfterProfit.sub(totalDebt)
+        : 0;
 
         uint256 _amountFreed;
         uint256 _toLiquidate = _debtOutstanding.add(_profit);
@@ -239,7 +241,7 @@ contract Strategy is BaseStrategy {
         } else {
             _liquidatedAmount = _amountNeeded;
         }
-        require(_amountNeeded == _liquidatedAmount.add(_loss), "!sanitycheck");
+        require(_amountNeeded == _liquidatedAmount.add(_loss), "!check");
     }
 
     function liquidateAllPositions() internal override returns (uint256 liquidated) {
@@ -281,10 +283,10 @@ contract Strategy is BaseStrategy {
     function _withdrawFromMasterChef(address _to, uint256 _amountBpt, uint256 _masterChefPoolId) internal {
         _amountBpt = Math.min(balanceOfBptInMasterChef(), _amountBpt);
         if (_amountBpt > 0) {
-            if(toggles.abandonRewards){
+            if (toggles.abandonRewards) {
                 masterChef.emergencyWithdraw(_masterChefPoolId, address(_to));
             }
-            else{
+            else {
                 masterChef.withdrawAndHarvest(_masterChefPoolId, _amountBpt, address(_to));
                 /* _depositIntoMasterChef(balanceOfBpt() - _amountBpt); */
             }
@@ -303,10 +305,13 @@ contract Strategy is BaseStrategy {
         _sellBpt(_amountBpt, assets, tokenIndex, balancerPoolId);
     }
 
+    function claimRewards() external onlyVaultManagers {
+        _claimRewards();
+    }
 
     // claim all beets rewards from masterchef
     function _claimRewards() internal {
-        if(getPendingBeets() > 0){
+        if (getPendingBeets() > 0) {
             uint256 rewardBal = balanceOfReward();
             masterChef.harvest(masterChefPoolId, address(this));
             uint256 keepBal = balanceOfReward().sub(rewardBal).mul(keepBips).div(basisOne);
@@ -322,10 +327,7 @@ contract Strategy is BaseStrategy {
 
     function _sellRewards() internal {
         uint256 amount = balanceOfReward();
-        uint decReward = ERC20(address(rewardToken)).decimals();
-        uint decWant = ERC20(address(want)).decimals();
-
-        if (amount > 10 ** (decReward > decWant ? decReward.sub(decWant) : 0)) {
+        if (amount > 0) {
             uint length = swapSteps.poolIds.length;
             IBalancerVault.BatchSwapStep[] memory steps = new IBalancerVault.BatchSwapStep[](length);
             int[] memory limits = new int[](length + 1);
@@ -463,7 +465,8 @@ contract Strategy is BaseStrategy {
         minDepositPeriod = _minDepositPeriod;
     }
 
-    function setToggles(bool _doSellRewards, bool _abandon) external onlyVaultManagers {
+    function setToggles(bool _claimRewards, bool _doSellRewards, bool _abandon) external onlyVaultManagers {
+        toggles.claimRewards = _claimRewards;
         toggles.doSellRewards = _doSellRewards;
         toggles.abandonRewards = _abandon;
     }
@@ -482,7 +485,7 @@ contract Strategy is BaseStrategy {
     // Balancer requires this contract to be payable, so we add ability to sweep stuck ETH
     function sweepETH() public onlyGovernance {
         (bool success,) = governance().call{value : address(this).balance}("");
-        require(success, "FailedETHSweep");
+        require(success, "eth");
     }
 
     receive() external payable {}
