@@ -399,7 +399,7 @@ contract Strategy is BaseStrategy {
         );
     }
 
-    // this allows us to also sell stakedBpts externally
+    // this allows us to also sell bpt externally
     function sellBpt(uint256 _amountBpts) external onlyVaultManagers {
         _sellBpt(_amountBpts);
     }
