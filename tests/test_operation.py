@@ -64,7 +64,7 @@ def test_manual_exit(
     # some slippage won't pass healthcheck
     strategy.harvest({"from": strategist})
 
-    strategy.withdrawFromMasterChef(strategy.balanceOfBptInMasterChef(), strategy.masterChefPoolId(), {"from": gov})
+    strategy.withdrawFromMasterChef(strategy.balanceOfBptInMasterChef(), {"from": gov})
     assert strategy.balanceOfBpt() > 0
     assert strategy.balanceOfBptInMasterChef() == 0
 

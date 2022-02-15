@@ -245,15 +245,15 @@ contract Strategy is BaseStrategy {
     }
 
     function liquidateAllPositions() internal override returns (uint256 liquidated) {
-        _withdrawFromMasterChef(address(this), balanceOfBptInMasterChef(), masterChefPoolId);
+        _withdrawFromMasterChef(address(this), balanceOfBptInMasterChef());
         // sell all bpt
-        _sellBpt(balanceOfBpt(), assets, tokenIndex, balancerPoolId);
+        _sellBpt(balanceOfBpt());
         liquidated = balanceOfWant();
     }
 
     // note that this withdraws into newStrategy.
     function prepareMigration(address _newStrategy) internal override {
-        _withdrawFromMasterChef(_newStrategy, balanceOfBptInMasterChef(), masterChefPoolId);
+        _withdrawFromMasterChef(_newStrategy, balanceOfBptInMasterChef());
         uint256 _balanceOfBpt = balanceOfBpt();
         if (_balanceOfBpt > 0) {
             bpt.transfer(_newStrategy, _balanceOfBpt);
@@ -274,17 +274,17 @@ contract Strategy is BaseStrategy {
 
     // HELPERS //
 
-    function withdrawFromMasterChef(uint256 _amountBpt, uint256 _masterChefPooId) external onlyVaultManagers {
-        _withdrawFromMasterChef(address(this), _amountBpt, _masterChefPooId);
+    function withdrawFromMasterChef(uint256 _amountBpt) external onlyVaultManagers {
+        _withdrawFromMasterChef(address(this), _amountBpt);
     }
 
     // AbandonRewards withdraws lp without rewards. Specify where to withdraw to
-    function _withdrawFromMasterChef(address _to, uint256 _amountBpt, uint256 _masterChefPoolId) internal {
+    function _withdrawFromMasterChef(address _to, uint256 _amountBpt) internal {
         _amountBpt = Math.min(balanceOfBptInMasterChef(), _amountBpt);
         if (_amountBpt > 0) {
             toggles.abandonRewards
-                ? masterChef.emergencyWithdraw(_masterChefPoolId, address(_to))
-                : masterChef.withdrawAndHarvest(_masterChefPoolId, _amountBpt, address(_to));
+                ? masterChef.emergencyWithdraw(masterChefPoolId, address(_to))
+                : masterChef.withdrawAndHarvest(masterChefPoolId, _amountBpt, address(_to));
         }
     }
 
@@ -294,10 +294,10 @@ contract Strategy is BaseStrategy {
         _amountBpt = Math.min(_amountBpt, balanceOfBptInMasterChef());
 
         // withdraw the desired amount out of masterchef
-        _withdrawFromMasterChef(address(this), _amountBpt, masterChefPoolId);
+        _withdrawFromMasterChef(address(this), _amountBpt);
 
         // sell the desired amount for want
-        _sellBpt(_amountBpt, assets, tokenIndex, balancerPoolId);
+        _sellBpt(_amountBpt);
     }
 
     function claimRewards() external onlyVaultManagers {
@@ -400,19 +400,19 @@ contract Strategy is BaseStrategy {
     }
 
     // this allows us to also sell stakedBpts externally
-    function sellBpt(uint256 _amountBpts, IAsset[] memory _assets, uint256 _tokenIndex, bytes32 _balancerPoolId) external onlyVaultManagers {
-        _sellBpt(_amountBpts, _assets, _tokenIndex, _balancerPoolId);
+    function sellBpt(uint256 _amountBpts) external onlyVaultManagers {
+        _sellBpt(_amountBpts);
     }
 
     // sell bpt for want at current bpt rate
-    function _sellBpt(uint256 _amountBpts, IAsset[] memory _assets, uint256 _tokenIndex, bytes32 _balancerPoolId) internal {
+    function _sellBpt(uint256 _amountBpts) internal {
         _amountBpts = Math.min(_amountBpts, balanceOfBpt());
         if (_amountBpts > 0) {
             uint256[] memory minAmountsOut = new uint256[](numTokens);
             minAmountsOut[tokenIndex] = bptsToTokens(_amountBpts).mul(basisOne.sub(maxSlippageOut)).div(basisOne);
-            bytes memory userData = abi.encode(IBalancerVault.ExitKind.EXACT_BPT_IN_FOR_ONE_TOKEN_OUT, _amountBpts, _tokenIndex);
-            IBalancerVault.ExitPoolRequest memory request = IBalancerVault.ExitPoolRequest(_assets, minAmountsOut, userData, false);
-            balancerVault.exitPool(_balancerPoolId, address(this), address(this), request);
+            bytes memory userData = abi.encode(IBalancerVault.ExitKind.EXACT_BPT_IN_FOR_ONE_TOKEN_OUT, _amountBpts, tokenIndex);
+            IBalancerVault.ExitPoolRequest memory request = IBalancerVault.ExitPoolRequest(assets, minAmountsOut, userData, false);
+            balancerVault.exitPool(balancerPoolId, address(this), address(this), request);
         }
     }
 
