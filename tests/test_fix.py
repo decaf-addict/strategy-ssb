@@ -1,39 +1,8 @@
 import pytest
 from brownie import accounts, Contract
 import util
-import brownie
 
-
-def test_migration(
-        chain,
-        token,
-        vault,
-        strategy,
-        amount,
-        Strategy,
-        strategist,
-        gov,
-        user,
-        RELATIVE_APPROX,
-        balancer_vault,
-        pool,
-        masterChef
-):
-    # Deposit to the vault and harvest
-    token.approve(vault.address, amount, {"from": user})
-    vault.deposit(amount, {"from": user})
-    chain.sleep(1)
-    strategy.harvest({"from": gov})
-    assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount
-
-    # migrate to a new strategy
-    new_strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, masterChef, 5, 5, 100_000, 2 * 60 * 60,
-                                     33)
-    vault.migrateStrategy(strategy, new_strategy, {"from": gov})
-    assert (pytest.approx(new_strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount)
-
-
-def test_real_migration(
+def test_real_migration_and_multiple_harvest(
         chain,
         vault,
         amount,
@@ -57,14 +26,16 @@ def test_real_migration(
                                        33)
     fixed_strategy.whitelistReward(beets, swapStepsBeets, fromGov)
 
+
+
     # steady beets 2 pool = #33
     old_pending = masterChef.pendingBeets(33, old)
     print(f'pending beets from old strategy: {old_pending}')
 
     vault.migrateStrategy(old, fixed_strategy, fromGov)
-    fixed_strategy.depositIntoMasterChef(fixed_strategy.balanceOfBptInMasterChef(), fromGov)
     util.stateOfStrat("old strategy after migration", old, token)
     util.stateOfStrat("new strategy after migration", fixed_strategy, token)
+
     total_debt = vault.strategies(fixed_strategy)["totalDebt"]
     assert fixed_strategy.estimatedTotalAssets() >= total_debt
 
@@ -78,14 +49,23 @@ def test_real_migration(
     util.stateOfStrat("old strategy after harvest", old, token)
     util.stateOfStrat("new strategy after harvest", fixed_strategy, token)
 
+    tx = fixed_strategy.harvest(fromGov)
+    tx = fixed_strategy.harvest(fromGov)
+
     # sell everything
     fixed_strategy.setEmergencyExit(fromGov)
+    # fixed_strategy.updateStrategyDebtRatio(0,fromGov)
     # rewards sold separately
-    fixed_strategy.sellRewards(fromGov)
-    with brownie.reverts():
-        fixed_strategy.harvest(fromGov)
+    # fixed_strategy.sellRewards(fromGov)
 
-    fixed_strategy.setParams(fixed_strategy.maxSlippageIn(), 10000, fixed_strategy.maxSingleDeposit(), fixed_strategy.minDepositPeriod(), fromGov)
+    fixed_strategy.setParams(
+        2_000,
+        2_000,
+        fixed_strategy.maxSingleDeposit(),
+        fixed_strategy.minDepositPeriod(),
+        fromGov
+    )
+    fixed_strategy.setDoHealthCheck(False, fromGov)
     chain.sleep(1)
     fixed_strategy.harvest(fromGov)
 
