@@ -20,6 +20,9 @@ interface IBalancerPool is IERC20 {
         bytes userData;
     }
 
+    // virtual price of bpt
+    function getRate() external view returns (uint);
+
     function getPoolId() external view returns (bytes32 poolId);
 
     function symbol() external view returns (string memory s);

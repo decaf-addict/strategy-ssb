@@ -25,10 +25,10 @@ contract Strategy is BaseStrategy {
     IERC20[] public rewardTokens;
     IAsset[] internal assets;
     SwapSteps[] internal swapSteps;
-    uint256[] internal minAmountsOut;
     bytes32 public balancerPoolId;
     uint8 public numTokens;
     uint8 public tokenIndex;
+    bool public doSellRewards = true;
 
     struct SwapSteps {
         bytes32[] poolIds;
@@ -89,12 +89,14 @@ contract Strategy is BaseStrategy {
         uint256 _maxSingleDeposit,
         uint256 _minDepositPeriod)
     internal {
-        require(address(bpt) == address(0x0), "Strategy already initialized!");
-        healthCheck = address(0xDDCea799fF1699e98EDF118e0629A974Df7DF012); // health.ychad.eth
+        // health.ychad.eth
+        healthCheck = address(0xDDCea799fF1699e98EDF118e0629A974Df7DF012);
+        doSellRewards = true;
         bpt = IBalancerPool(_balancerPool);
         balancerPoolId = bpt.getPoolId();
         balancerVault = IBalancerVault(_balancerVault);
         (IERC20[] memory tokens,,) = balancerVault.getPoolTokens(balancerPoolId);
+        require(tokens.length > 0, "Empty Pool");
         numTokens = uint8(tokens.length);
         assets = new IAsset[](numTokens);
         tokenIndex = type(uint8).max;
@@ -109,7 +111,6 @@ contract Strategy is BaseStrategy {
         maxSlippageIn = _maxSlippageIn;
         maxSlippageOut = _maxSlippageOut;
         maxSingleDeposit = _maxSingleDeposit.mul(10 ** uint256(ERC20(address(want)).decimals()));
-        minAmountsOut = new uint256[](numTokens);
         minDepositPeriod = _minDepositPeriod;
 
         want.safeApprove(address(balancerVault), max);
@@ -153,8 +154,7 @@ contract Strategy is BaseStrategy {
     // ******** OVERRIDE THESE METHODS FROM BASE CONTRACT ************
 
     function name() external view override returns (string memory) {
-        // Add your own name here, suggestion e.g. "StrategyCreamYFI"
-        return string(abi.encodePacked("SingleSidedBalancer ", bpt.symbol(), "Pool ", ERC20(address(want)).symbol()));
+        return string(abi.encodePacked("SSBv2 ", ERC20(address(want)).symbol(), " ", bpt.symbol()));
     }
 
     function estimatedTotalAssets() public view override returns (uint256) {
@@ -170,79 +170,63 @@ contract Strategy is BaseStrategy {
 
         // 2 forms of profit. Incentivized rewards (BAL+other) and pool fees (want)
         collectTradingFees();
-        sellRewards();
+        // this would allow finer control over harvesting to get credits in without selling
+        if (doSellRewards) {
+            _sellRewards();
+        }
 
         uint256 afterWant = balanceOfWant();
 
         _profit = afterWant.sub(beforeWant);
         if (_profit > _loss) {
             _profit = _profit.sub(_loss);
+            _debtPayment = _debtPayment.add(_loss);
             _loss = 0;
         } else {
             _loss = _loss.sub(_profit);
+            _debtPayment = _debtPayment.add(_profit);
             _profit = 0;
         }
     }
 
     function adjustPosition(uint256 _debtOutstanding) internal override {
-        if (now - lastDepositTime < minDepositPeriod) {
+        if (now.sub(lastDepositTime) < minDepositPeriod) {
             return;
         }
 
-        uint256 pooledBefore = balanceOfPooled();
-        uint256[] memory maxAmountsIn = new uint256[](numTokens);
         uint256 amountIn = Math.min(maxSingleDeposit, balanceOfWant());
+        uint256 expectedBptOut = tokensToBpts(amountIn).mul(basisOne.sub(maxSlippageIn)).div(basisOne);
+        uint256[] memory maxAmountsIn = new uint256[](numTokens);
         maxAmountsIn[tokenIndex] = amountIn;
 
         if (amountIn > 0) {
-            uint256[] memory amountsIn = new uint256[](numTokens);
-            amountsIn[tokenIndex] = amountIn;
-            bytes memory userData = abi.encode(IBalancerVault.JoinKind.EXACT_TOKENS_IN_FOR_BPT_OUT, amountsIn, 0);
+            bytes memory userData = abi.encode(IBalancerVault.JoinKind.EXACT_TOKENS_IN_FOR_BPT_OUT, maxAmountsIn, expectedBptOut);
             IBalancerVault.JoinPoolRequest memory request = IBalancerVault.JoinPoolRequest(assets, maxAmountsIn, userData, false);
             balancerVault.joinPool(balancerPoolId, address(this), address(this), request);
-
-            uint256 pooledDelta = balanceOfPooled().sub(pooledBefore);
-            uint256 joinSlipped = amountIn > pooledDelta ? amountIn.sub(pooledDelta) : 0;
-            uint256 maxLoss = amountIn.mul(maxSlippageIn).div(basisOne);
-
-            require(joinSlipped <= maxLoss, "Exceeded maxSlippageIn!");
             lastDepositTime = now;
         }
     }
 
+    // withdraws will realize losses if the pool is in bad conditions. This will heavily rely on _enforceSlippage to revert
+    // and make sure we don't have to realize losses when not necessary
     function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _liquidatedAmount, uint256 _loss){
-        if (estimatedTotalAssets() < _amountNeeded) {
-            _liquidatedAmount = liquidateAllPositions();
-            return (_liquidatedAmount, _amountNeeded.sub(_liquidatedAmount));
-        }
-
         uint256 looseAmount = balanceOfWant();
         if (_amountNeeded > looseAmount) {
             uint256 toExitAmount = _amountNeeded.sub(looseAmount);
 
-            _sellBptForExactToken(toExitAmount);
+            _sellBpt(tokensToBpts(toExitAmount));
 
             _liquidatedAmount = Math.min(balanceOfWant(), _amountNeeded);
             _loss = _amountNeeded.sub(_liquidatedAmount);
-
-            _enforceSlippageOut(toExitAmount, _liquidatedAmount.sub(looseAmount));
         } else {
             _liquidatedAmount = _amountNeeded;
         }
+        require(_amountNeeded == _liquidatedAmount.add(_loss), "!sanitycheck");
     }
 
     function liquidateAllPositions() internal override returns (uint256 liquidated) {
-        uint eta = estimatedTotalAssets();
-        uint256 bpts = balanceOfBpt();
-        if (bpts > 0) {
-            // exit entire position for single token. Could revert due to single exit limit enforced by balancer
-            bytes memory userData = abi.encode(IBalancerVault.ExitKind.EXACT_BPT_IN_FOR_ONE_TOKEN_OUT, bpts, tokenIndex);
-            IBalancerVault.ExitPoolRequest memory request = IBalancerVault.ExitPoolRequest(assets, minAmountsOut, userData, false);
-            balancerVault.exitPool(balancerPoolId, address(this), address(this), request);
-        }
-
+        _sellBpt(balanceOfBpt());
         liquidated = balanceOfWant();
-        _enforceSlippageOut(eta, liquidated);
         return liquidated;
     }
 
@@ -252,7 +236,7 @@ contract Strategy is BaseStrategy {
             IERC20 token = rewardTokens[i];
             uint256 balance = token.balanceOf(address(this));
             if (balance > 0) {
-                token.transfer(_newStrategy, balance);
+                token.safeTransfer(_newStrategy, balance);
             }
         }
     }
@@ -265,24 +249,12 @@ contract Strategy is BaseStrategy {
         return now.sub(lastDepositTime) > minDepositPeriod && balanceOfWant() > 0;
     }
 
-    function harvestTrigger(uint256 callCostInWei) public view override returns (bool){
-        bool hasRewards;
-        uint decWant = ERC20(address(want)).decimals();
-        for (uint8 i = 0; i < rewardTokens.length; i++) {
-            ERC20 rewardToken = ERC20(address(rewardTokens[i]));
-
-            uint decReward = rewardToken.decimals();
-            if (rewardToken.balanceOf(address(this)) > 10 ** (decReward > decWant ? decReward.sub(decWant) : 0)) {
-                hasRewards = true;
-                break;
-            }
-        }
-        return super.harvestTrigger(callCostInWei) && hasRewards;
+    // HELPERS //
+    function sellRewards() external onlyVaultManagers {
+        _sellRewards();
     }
 
-
-    // HELPERS //
-    function sellRewards() internal {
+    function _sellRewards() internal {
         for (uint8 i = 0; i < rewardTokens.length; i++) {
             ERC20 rewardToken = ERC20(address(rewardTokens[i]));
             uint256 amount = rewardToken.balanceOf(address(this));
@@ -318,7 +290,7 @@ contract Strategy is BaseStrategy {
         uint256 debt = vault.strategies(address(this)).totalDebt;
         if (total > debt) {
             uint256 profit = total.sub(debt);
-            _sellBptForExactToken(profit);
+            _sellBpt(tokensToBpts(profit));
         }
     }
 
@@ -334,22 +306,27 @@ contract Strategy is BaseStrategy {
         return rewardTokens[index].balanceOf(address(this));
     }
 
+    // returns an estimate of want tokens based on bpt balance
     function balanceOfPooled() public view returns (uint256 _amount){
-        uint256 totalWantPooled;
-        (IERC20[] memory tokens,uint256[] memory totalBalances,uint256 lastChangeBlock) = balancerVault.getPoolTokens(balancerPoolId);
-        for (uint8 i = 0; i < numTokens; i++) {
-            uint256 tokenPooled = totalBalances[i].mul(balanceOfBpt()).div(bpt.totalSupply());
-            if (tokenPooled > 0) {
-                IERC20 token = tokens[i];
-                if (token != want) {
-                    IBalancerPool.SwapRequest memory request = _getSwapRequest(token, tokenPooled, lastChangeBlock);
-                    // now denomated in want
-                    tokenPooled = bpt.onSwap(request, totalBalances, i, tokenIndex);
-                }
-                totalWantPooled += tokenPooled;
-            }
-        }
-        return totalWantPooled;
+        return bptsToTokens(balanceOfBpt());
+    }
+
+    /// use bpt rate to estimate equivalent amount of want.
+    function bptsToTokens(uint _amountBpt) public view returns (uint _amount){
+        uint unscaled = _amountBpt.mul(bpt.getRate()).div(1e18);
+        return _scaleDecimals(unscaled, ERC20(address(bpt)), ERC20(address(want)));
+    }
+
+
+    function tokensToBpts(uint _amountTokens) public view returns (uint _amount){
+        uint unscaled = _amountTokens.mul(1e18).div(bpt.getRate());
+        return _scaleDecimals(unscaled, ERC20(address(want)), ERC20(address(bpt)));
+    }
+
+    function _scaleDecimals(uint _amount, ERC20 _fromToken, ERC20 _toToken) internal view returns (uint _scaled){
+        uint decFrom = _fromToken.decimals();
+        uint decTo = _toToken.decimals();
+        return decTo > decFrom ? _amount.mul(10 ** (decTo.sub(decFrom))) : _amount.div(10 ** (decFrom.sub(decTo)));
     }
 
     function _getSwapRequest(IERC20 token, uint256 amount, uint256 lastChangeBlock) internal view returns (IBalancerPool.SwapRequest memory request){
@@ -365,12 +342,20 @@ contract Strategy is BaseStrategy {
         );
     }
 
-    function _sellBptForExactToken(uint256 _amountTokenOut) internal {
-        uint256[] memory amountsOut = new uint256[](numTokens);
-        amountsOut[tokenIndex] = _amountTokenOut;
-        bytes memory userData = abi.encode(IBalancerVault.ExitKind.BPT_IN_FOR_EXACT_TOKENS_OUT, amountsOut, balanceOfBpt());
-        IBalancerVault.ExitPoolRequest memory request = IBalancerVault.ExitPoolRequest(assets, minAmountsOut, userData, false);
-        balancerVault.exitPool(balancerPoolId, address(this), address(this), request);
+    function sellBpt(uint256 _amountBpts) external onlyVaultManagers {
+        _sellBpt(_amountBpts);
+    }
+
+    // sell bpt for want at current bpt rate
+    function _sellBpt(uint256 _amountBpts) internal {
+        _amountBpts = Math.min(_amountBpts, balanceOfBpt());
+        if (_amountBpts > 0) {
+            uint256[] memory minAmountsOut = new uint256[](numTokens);
+            minAmountsOut[tokenIndex] = bptsToTokens(_amountBpts).mul(basisOne.sub(maxSlippageOut)).div(basisOne);
+            bytes memory userData = abi.encode(IBalancerVault.ExitKind.EXACT_BPT_IN_FOR_ONE_TOKEN_OUT, _amountBpts, tokenIndex);
+            IBalancerVault.ExitPoolRequest memory request = IBalancerVault.ExitPoolRequest(assets, minAmountsOut, userData, false);
+            balancerVault.exitPool(balancerPoolId, address(this), address(this), request);
+        }
     }
 
     // for partnership rewards like Lido or airdrops
@@ -405,16 +390,18 @@ contract Strategy is BaseStrategy {
         minDepositPeriod = _minDepositPeriod;
     }
 
-    function _enforceSlippageOut(uint _intended, uint _actual) internal {
-        // enforce that amount exited didn't slip beyond our tolerance
-        // just in case there's positive slippage
-        uint256 exitSlipped = _intended > _actual ? _intended.sub(_actual) : 0;
-        uint256 maxLoss = _intended.mul(maxSlippageOut).div(basisOne);
-        require(exitSlipped <= maxLoss, "Exceeded maxSlippageOut!");
+    function setDoSellRewards(bool _doSellRewards) external onlyVaultManagers {
+        doSellRewards = _doSellRewards;
     }
 
     function getSwapSteps() public view returns (SwapSteps[] memory){
         return swapSteps;
+    }
+
+    // Balancer requires this contract to be payable, so we add ability to sweep stuck ETH
+    function sweepETH() public onlyGovernance {
+        (bool success, ) = governance().call{value: address(this).balance}("");
+        require(success,"!FailedETHSweep");
     }
 
     receive() external payable {}
