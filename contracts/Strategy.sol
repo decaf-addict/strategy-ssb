@@ -35,15 +35,17 @@ contract Strategy is BaseStrategy {
         IAsset[] assets;
     }
 
+    modifier isVaultManager {
+        checkVaultManagers();
+        _;
+    }
+
+    function checkVaultManagers() internal {
+        require(msg.sender == vault.governance() || msg.sender == vault.management());
+    }
+
     uint256 internal constant max = type(uint256).max;
 
-    //1	    0.01%
-    //5	    0.05%
-    //10	0.1%
-    //50	0.5%
-    //100	1%
-    //1000	10%
-    //10000	100%
     uint256 public maxSlippageIn; // bips
     uint256 public maxSlippageOut; // bips
     uint256 public maxSingleDeposit;
@@ -154,7 +156,7 @@ contract Strategy is BaseStrategy {
     // ******** OVERRIDE THESE METHODS FROM BASE CONTRACT ************
 
     function name() external view override returns (string memory) {
-        return string(abi.encodePacked("SSBv2 ", ERC20(address(want)).symbol(), " ", bpt.symbol()));
+        return string(abi.encodePacked("SSBv2 Boosted ", ERC20(address(want)).symbol(), " ", bpt.symbol()));
     }
 
     function estimatedTotalAssets() public view override returns (uint256) {
@@ -250,7 +252,7 @@ contract Strategy is BaseStrategy {
     }
 
     // HELPERS //
-    function sellRewards() external onlyVaultManagers {
+    function sellRewards() external isVaultManager {
         _sellRewards();
     }
 
@@ -342,7 +344,7 @@ contract Strategy is BaseStrategy {
         );
     }
 
-    function sellBpt(uint256 _amountBpts) external onlyVaultManagers {
+    function sellBpt(uint256 _amountBpts) external isVaultManager {
         _sellBpt(_amountBpts);
     }
 
@@ -359,14 +361,14 @@ contract Strategy is BaseStrategy {
     }
 
     // for partnership rewards like Lido or airdrops
-    function whitelistRewards(address _rewardToken, SwapSteps memory _steps) public onlyVaultManagers {
+    function whitelistRewards(address _rewardToken, SwapSteps memory _steps) public isVaultManager {
         IERC20 token = IERC20(_rewardToken);
         token.approve(address(balancerVault), max);
         rewardTokens.push(token);
         swapSteps.push(_steps);
     }
 
-    function delistAllRewards() public onlyVaultManagers {
+    function delistAllRewards() public isVaultManager {
         for (uint i = 0; i < rewardTokens.length; i++) {
             rewardTokens[i].approve(address(balancerVault), 0);
         }
@@ -379,7 +381,7 @@ contract Strategy is BaseStrategy {
         return rewardTokens.length;
     }
 
-    function setParams(uint256 _maxSlippageIn, uint256 _maxSlippageOut, uint256 _maxSingleDeposit, uint256 _minDepositPeriod) public onlyVaultManagers {
+    function setParams(uint256 _maxSlippageIn, uint256 _maxSlippageOut, uint256 _maxSingleDeposit, uint256 _minDepositPeriod) public isVaultManager {
         require(_maxSlippageIn <= basisOne, "maxSlippageIn too high");
         maxSlippageIn = _maxSlippageIn;
 
@@ -390,7 +392,7 @@ contract Strategy is BaseStrategy {
         minDepositPeriod = _minDepositPeriod;
     }
 
-    function setDoSellRewards(bool _doSellRewards) external onlyVaultManagers {
+    function setDoSellRewards(bool _doSellRewards) external isVaultManager {
         doSellRewards = _doSellRewards;
     }
 
@@ -400,8 +402,8 @@ contract Strategy is BaseStrategy {
 
     // Balancer requires this contract to be payable, so we add ability to sweep stuck ETH
     function sweepETH() public onlyGovernance {
-        (bool success, ) = governance().call{value: address(this).balance}("");
-        require(success,"!FailedETHSweep");
+        (bool success,) = governance().call{value : address(this).balance}("");
+        require(success, "!FailedETHSweep");
     }
 
     receive() external payable {}
