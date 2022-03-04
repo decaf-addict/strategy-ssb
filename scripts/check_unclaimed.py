@@ -5,14 +5,13 @@ import json
 
 
 def main():
-    ssb_dai = Contract('0x9cfF0533972da48Ac05a00a375CC1a65e87Da7eC')
-    ssb_usdt = Contract('0x3ef6Ec70D4D8fE69365C92086d470bb7D5fC92Eb')
-    ssb_usdc = Contract('0x7A32aA9a16A59CB335ffdEe3dC94024b7F8A9a47')
-    ssb_wbtc = Contract('0x7c1612476D235c8054253c83B98f7Ca6f7F2E9D0')
-    ssb_weth = Contract('0xc31763c0c3025b9DF3Fb7Cb7f4AC041866F64F2E')
-    sms = Contract('0x16388463d60FFE0661Cf7F1f31a7D658aC790ff7')
+    ssb_dai = Contract('0x3B7c81daa0F7C897b3e09352E1Ca2fBE93Ac234D')
+    ssb_usdt = Contract('0xf0E5f920F8daf2a01ed473D67e74565e7a4a1979')
+    ssb_usdc = Contract('0xC7af91cdDDfC7c782671eFb640A4E4C4FB6352B4')
+    ssb_wbtc = Contract('0xf2901406A1743ac032863777c61f1d61b59115fd')
+    ssb_weth = Contract('0x1d4439680c489f18ce480e72DeeDc235952AF9C9')
 
-    strats = [ssb_dai, ssb_usdt, ssb_usdc, ssb_wbtc, sms]
+    strats = [ssb_dai, ssb_usdt, ssb_usdc, ssb_wbtc, ssb_weth]
 
     bal_distributor = Contract("0xd2EB7Bd802A7CA68d9AcD209bEc4E664A9abDD7b")
     merkleOrchard = Contract("0xdAE7e32ADc5d490a43cCba1f0c736033F2b4eFca")
