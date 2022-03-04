@@ -42,5 +42,6 @@ def main():
                         claimed = merkleOrchard.isClaimed(reward[1], reward[2], distributionId, token_data["address"])
                         print(f"claimed: {claimed}")
                         if not claimed:
+                            # merkleOrchard.claimDistributions(token_data["address"], claim, [reward[1]], {'from': dev, 'gas_price': '50 gwei'}
                             merkleOrchard.claimDistributions(token_data["address"], claim, [reward[1]], {'from': dev})
                             print(f'{name} claimed {int(token_data["claim_amount"]) / 1e18} {reward[3]} ')
