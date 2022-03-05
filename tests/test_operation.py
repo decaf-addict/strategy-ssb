@@ -84,6 +84,8 @@ def test_profitable_harvest(
 
     before_pps = vault.pricePerShare()
 
+    chain.mine(1)
+    chain.sleep(1)
     # Harvest 2: Realize profit
     util.airdrop_rewards(strategy, beets, beets_whale)
 
@@ -116,7 +118,7 @@ def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RE
         strategy.tend({'from': gov})
         util.stateOfStrat("tend", strategy, token)
         assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount
-        chain.sleep(strategy.minDepositPeriod() + 1)
+        # chain.sleep(strategy.minDepositPeriod() + 1)
         chain.mine(1)
 
     before_pps = vault.pricePerShare()
@@ -138,6 +140,9 @@ def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RE
 
     vault.updateStrategyDebtRatio(strategy.address, 5_000, {"from": gov})
     chain.sleep(1)
+
+    # strategy.setDoHealthCheck(False, {'from':gov})
+
     strategy.harvest({"from": strategist})
     util.stateOfStrat("after harvest 5000", strategy, token)
 
@@ -328,7 +333,7 @@ def test_unbalanced_pool_withdraw(chain, token, vault, strategy, user, strategis
     old_slippage = strategy.maxSlippageOut()
 
     # loosen the slippage check to let the lossy withdraw go through
-    strategy.setParams(10000, 10000, strategy.maxSingleDeposit(), strategy.minDepositPeriod(), {'from': gov})
+    strategy.setParams(10000, 10000, strategy.maxSingleDeposit(), strategy.minDepositPeriod(), strategy.keep(), strategy.keepBips(), {'from': gov})
     vault.withdraw(vault.balanceOf(user) / 2, user, 10000, {"from": user})
     print(f'pool state: {balancer_vault.getPoolTokens(pool.getPoolId())}')
     print(f'user balance: {token.balanceOf(user)}')
