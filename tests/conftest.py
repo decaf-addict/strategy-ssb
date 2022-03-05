@@ -178,7 +178,8 @@ def balancer_vault():
 def pool():
     # 0x06Df3b2bbB68adc8B0e302443692037ED9f91b42 stable pool
     # 0x32296969Ef14EB0c6d29669C550D4a0449130230 metastable eth pool
-    address = "0x06Df3b2bbB68adc8B0e302443692037ED9f91b42" # staBAL3
+    # 0x7B50775383d3D6f0215A8F290f2C9e2eEBBEceb2 boosted
+    address = "0x7B50775383d3D6f0215A8F290f2C9e2eEBBEceb2" # boosted
     yield Contract(address)
 
 

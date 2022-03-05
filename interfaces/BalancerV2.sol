@@ -20,6 +20,8 @@ interface IBalancerPool is IERC20 {
         bytes userData;
     }
 
+    function getRate() external view returns (uint);
+
     function getPoolId() external view returns (bytes32 poolId);
 
     function symbol() external view returns (string memory s);
@@ -48,6 +50,13 @@ interface IBalancerVault {
      * The `userData` field is ignored by the Vault, but forwarded to the Pool in the `onSwap` hook, and may be
      * used to extend swap behavior.
      */
+
+    /// In swaps of the type given_in you're pushing a token into a pipeline and getting another one at the end.
+    /// At each step along the way, the output of a swap becomes input of the next.
+    /// @param _amount = amount sent to pool to trade
+    /// In swaps of the type given_out you're pulling a token from a pipeline; the last step pulls some other token from your own account.
+    /// At each step along the way, the tokens that will go into a swap will be the ones that come out of the next.
+    /// @param _amount = amount desired to be returned by pool
     struct BatchSwapStep {
         bytes32 poolId;
         uint256 assetInIndex;
@@ -281,12 +290,6 @@ interface ILinearPool is IBalancerPool {
     function getWrappedIndex() external view returns (uint256);
 
     // Price rates
-
-    /**
-     * @dev For a Linear Pool, the rate represents the appreciation of BPT with respect to the underlying tokens. This
-     * rate increases slowly as the wrapped token appreciates in value.
-     */
-    function getRate() external view returns (uint256);
 
     function getWrappedTokenRate() external view returns (uint256);
 
