@@ -34,6 +34,15 @@ contract Strategy is BaseStrategy {
     // masterchef
     IBeethovenxMasterChef public masterChef;
 
+    modifier isVaultManager {
+        checkVaultManagers();
+        _;
+    }
+
+    function checkVaultManagers() internal {
+        require(msg.sender == vault.governance() || msg.sender == vault.management());
+    }
+
     struct SwapSteps {
         bytes32[] poolIds;
         IAsset[] assets;
@@ -276,7 +285,7 @@ contract Strategy is BaseStrategy {
 
     // HELPERS //
 
-    function withdrawFromMasterChef(uint256 _amountBpt) external onlyVaultManagers {
+    function withdrawFromMasterChef(uint256 _amountBpt) external isVaultManager {
         _withdrawFromMasterChef(address(this), _amountBpt);
     }
 
@@ -302,6 +311,10 @@ contract Strategy is BaseStrategy {
         _sellBpt(_amountBpt);
     }
 
+    function claimRewards() external isVaultManager {
+        _claimRewards();
+    }
+
     // claim all beets rewards from masterchef
     function _claimRewards() internal {
         if (getPendingBeets() > 0) {
@@ -312,6 +325,10 @@ contract Strategy is BaseStrategy {
                 beets.safeTransfer(keep, keepBal);
             }
         }
+    }
+
+    function sellRewards() external isVaultManager {
+        _sellRewards();
     }
 
     function _sellRewards() internal {
@@ -432,14 +449,14 @@ contract Strategy is BaseStrategy {
     }
 
     // for partnership rewards like TUSD or airdrops
-    function whitelistRewards(address _rewardToken, SwapSteps memory _steps) public onlyVaultManagers {
+    function whitelistRewards(address _rewardToken, SwapSteps memory _steps) public isVaultManager {
         IERC20 token = IERC20(_rewardToken);
         token.approve(address(balancerVault), max);
         rewardTokens.push(token);
         swapSteps.push(_steps);
     }
 
-    function delistAllRewards() public onlyVaultManagers {
+    function delistAllRewards() public isVaultManager {
         for (uint i = 0; i < rewardTokens.length; i++) {
             rewardTokens[i].approve(address(balancerVault), 0);
         }
@@ -449,7 +466,7 @@ contract Strategy is BaseStrategy {
     }
 
     function setParams(uint256 _maxSlippageIn, uint256 _maxSlippageOut, uint256 _maxSingleDeposit, uint256 _minDepositPeriod,
-            address _keep, uint _keepBips) public onlyVaultManagers {
+            address _keep, uint _keepBips) public isVaultManager {
         require(_maxSlippageIn <= basisOne);
         maxSlippageIn = _maxSlippageIn;
 
@@ -464,7 +481,7 @@ contract Strategy is BaseStrategy {
         keepBips = _keepBips;
     }
 
-    function setToggles(bool _doClaimRewards, bool _doSellRewards, bool _abandon) external onlyVaultManagers {
+    function setToggles(bool _doClaimRewards, bool _doSellRewards, bool _abandon) external isVaultManager {
         toggles.doClaimRewards = _doClaimRewards;
         toggles.doSellRewards = _doSellRewards;
         toggles.abandonRewards = _abandon;
