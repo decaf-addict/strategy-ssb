@@ -29,9 +29,8 @@ contract Strategy is BaseStrategy {
     IERC20[] public rewardTokens;
     SwapSteps[] internal swapSteps;
     bytes32 public balancerPoolId;
-    uint8 public tokenIndex;
-    uint8 public bptIndex;
-    bool public doSellRewards = true;
+
+    bool public doSellRewards;
 
     struct SwapSteps {
         bytes32[] poolIds;
@@ -106,7 +105,7 @@ contract Strategy is BaseStrategy {
         for (uint8 i = 0; i < numTokens; i++) {
             ILinearPool _lpt = ILinearPool(address(tokens[i]));
             if (address(_lpt) == address(bpt)) {
-                bptIndex = i;
+                // do nothing. This is just here so that _lpt.getMainToken doesn't revert from interface mismatch
             } else if (_lpt.getMainToken() == address(want)) {
                 lpt = _lpt;
             }
@@ -206,6 +205,7 @@ contract Strategy is BaseStrategy {
         }
     }
 
+
     // withdraws will realize losses if the pool is in bad conditions. This will heavily rely on _enforceSlippage to revert
     // and make sure we don't have to realize losses when not necessary
     function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _liquidatedAmount, uint256 _loss){
@@ -213,7 +213,7 @@ contract Strategy is BaseStrategy {
         if (_amountNeeded > looseAmount) {
             uint256 toExitAmount = _amountNeeded.sub(looseAmount);
 
-            _exitPool(toExitAmount);
+            _exitPool(tokensToBpts(toExitAmount));
 
             _liquidatedAmount = Math.min(balanceOfWant(), _amountNeeded);
             _loss = _amountNeeded.sub(_liquidatedAmount);
@@ -253,6 +253,7 @@ contract Strategy is BaseStrategy {
     // swap from want --> lpt --> bpt
     function _joinPool(uint _wants) internal {
         _wants = Math.min(balanceOfWant(), _wants);
+        uint prevBpts = balanceOfBpt();
 
         address[] memory assets = new address[](3);
         assets[0] = address(want);
@@ -282,10 +283,24 @@ contract Strategy is BaseStrategy {
             IBalancerVault.FundManagement(address(this), false, address(this), false),
             limits,
             max);
+
+        // price impact check
+        uint estimatedBpts = tokensToBpts(_wants);
+        uint investedBpts = balanceOfBpt().sub(prevBpts);
+        require(
+            investedBpts >= estimatedBpts ||
+            estimatedBpts.sub(investedBpts).mul(basisOne).div(estimatedBpts) < maxSlippageIn, "slippedin!"
+        );
+    }
+
+    function exitPool(uint _bpts) external isVaultManager {
+        _exitPool(_bpts);
     }
 
     function _exitPool(uint _bpts) internal {
         _bpts = Math.min(balanceOfBpt(), _bpts);
+        uint prevWants = balanceOfWant();
+        uint prevEta = estimatedTotalAssets();
 
         address[] memory assets = new address[](3);
         assets[0] = address(bpt);
@@ -315,6 +330,16 @@ contract Strategy is BaseStrategy {
             IBalancerVault.FundManagement(address(this), false, address(this), false),
             limits,
             max);
+
+        // price impact check
+        uint requestedWants = bptsToTokens(_bpts);
+        uint exitedWants = balanceOfWant().sub(prevWants);
+
+        // ensure that the exited wants didn't slip beyond threshold
+        require(
+            exitedWants >= requestedWants ||
+            requestedWants.sub(exitedWants).mul(basisOne).div(requestedWants) < maxSlippageOut, "slippedout!"
+        );
     }
 
     function sellRewards() external isVaultManager {
@@ -357,7 +382,7 @@ contract Strategy is BaseStrategy {
         uint256 debt = vault.strategies(address(this)).totalDebt;
         if (total > debt) {
             uint256 profit = total.sub(debt);
-            _exitPool(profit);
+            _exitPool(tokensToBpts(profit));
         }
     }
 
