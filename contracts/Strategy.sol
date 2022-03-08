@@ -250,6 +250,10 @@ contract Strategy is BaseStrategy {
 
     // HELPERS //
 
+    function joinPool(uint _wants) external isVaultManager {
+        _joinPool(_wants);
+    }
+
     // swap from want --> lpt --> bpt
     function _joinPool(uint _wants) internal {
         _wants = Math.min(balanceOfWant(), _wants);
