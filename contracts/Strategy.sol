@@ -7,13 +7,19 @@ pragma experimental ABIEncoderV2;
 
 // These are the core Yearn libraries
 import {BaseStrategy, StrategyParams} from "@yearnvaults/contracts/BaseStrategy.sol";
-import {Address} from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {Math} from "@openzeppelin/contracts/math/Math.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/math/SafeMath.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
+import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
+import "@openzeppelin/contracts/math/Math.sol";
 import "../interfaces/BalancerV2.sol";
 import "../interfaces/MasterChef.sol";
 
 contract Strategy is BaseStrategy {
+    using SafeERC20 for IERC20;
+    using Address for address;
+    using SafeMath for uint256;
 
     IBalancerVault public balancerVault;
     IBalancerPool public bpt;
@@ -460,8 +466,7 @@ contract Strategy is BaseStrategy {
         for (uint i = 0; i < rewardTokens.length; i++) {
             rewardTokens[i].approve(address(balancerVault), 0);
         }
-        IERC20[] memory noRewardTokens;
-        rewardTokens = noRewardTokens;
+        delete rewardTokens;
         delete swapSteps;
     }
 

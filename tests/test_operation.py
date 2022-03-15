@@ -70,7 +70,7 @@ def test_manual_exit(
 
 
 def test_profitable_harvest(
-        chain, token, vault, gov, strategy, user, strategist, amount, RELATIVE_APPROX, beets, beets_whale, management
+        chain, token, vault, gov, strategy, user, strategist, amount, RELATIVE_APPROX, beets, beets_whale, management, tusd, tusd_whale
 ):
     # Deposit to the vault
     token.approve(vault.address, amount, {"from": user})
@@ -87,7 +87,7 @@ def test_profitable_harvest(
     chain.mine(1)
     chain.sleep(1)
     # Harvest 2: Realize profit
-    util.airdrop_rewards(strategy, beets, beets_whale)
+    util.airdrop_rewards(strategy, beets, beets_whale, tusd, tusd_whale)
 
     tx = strategy.harvest({"from": strategist})
     print(tx.events["StrategyReported"])
@@ -99,8 +99,50 @@ def test_profitable_harvest(
     assert strategy.estimatedTotalAssets() + profit > amount
     assert vault.pricePerShare() > before_pps
 
+def test_delist_rewards (
+        chain, token, vault, gov, strategy, user, strategist, amount, RELATIVE_APPROX, beets, beets_whale, management, tusd, tusd_whale, swapStepsBeets, swapStepsTusd
+):
+    # Deposit to the vault
+    token.approve(vault.address, amount, {"from": user})
+    vault.deposit(amount, {"from": user})
+    assert token.balanceOf(vault.address) == amount
 
-def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, beets, beets_whale,
+    # Harvest 1: Send funds through the strategy
+    chain.sleep(1)
+    strategy.harvest({"from": strategist})
+    assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount
+
+    before_pps = vault.pricePerShare()
+
+    chain.mine(1)
+    chain.sleep(1)
+
+    strategy.delistAllRewards({'from': gov})
+    strategy.whitelistRewards(beets, swapStepsBeets, {'from': gov})
+    strategy.whitelistRewards(tusd, swapStepsTusd, {'from': gov})
+
+    chain.mine(1)
+    chain.sleep(1)
+    # Harvest 2: Realize profit
+    util.airdrop_rewards(strategy, beets, beets_whale, tusd, tusd_whale)
+    assert tusd.balanceOf(strategy) > 0
+    assert beets.balanceOf(strategy) > 0
+    # This should sell rewards
+    tx = strategy.harvest({"from": strategist})
+    print(tx.events["StrategyReported"])
+    chain.sleep(3600 * 6)  # 6 hrs needed for profits to unlock
+    chain.mine(1)
+
+    profit = token.balanceOf(vault.address)
+
+    assert strategy.estimatedTotalAssets() + profit > amount
+    assert vault.pricePerShare() > before_pps
+    assert tusd.balanceOf(strategy) == 0
+    assert beets.balanceOf(strategy) == 0
+
+
+
+def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, beets, beets_whale, tusd, tusd_whale,
                      gov):
     # Deposit to the vault
     token.approve(vault.address, amount, {"from": user})
@@ -122,7 +164,7 @@ def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RE
         chain.mine(1)
 
     before_pps = vault.pricePerShare()
-    util.airdrop_rewards(strategy, beets, beets_whale)
+    util.airdrop_rewards(strategy, beets, beets_whale, tusd, tusd_whale)
     util.stateOfStrat("after airdrop", strategy, beets)
 
     # Harvest 2: Realize profit
@@ -141,7 +183,7 @@ def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RE
     vault.updateStrategyDebtRatio(strategy.address, 5_000, {"from": gov})
     chain.sleep(1)
 
-    # strategy.setDoHealthCheck(False, {'from':gov})
+    strategy.setDoHealthCheck(False, {'from':gov})
 
     strategy.harvest({"from": strategist})
     util.stateOfStrat("after harvest 5000", strategy, token)
@@ -152,7 +194,7 @@ def test_deposit_all(chain, token, vault, strategy, user, strategist, amount, RE
 
 
 def test_change_debt(
-        chain, gov, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, beets, beets_whale
+        chain, gov, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, beets, beets_whale, tusd, tusd_whale
 ):
     # Deposit to the vault and harvest
     token.approve(vault.address, amount, {"from": user})
@@ -171,7 +213,7 @@ def test_change_debt(
     chain.sleep(1)
 
     util.stateOfStrat("before airdrop", strategy, token)
-    util.airdrop_rewards(strategy, beets, beets_whale)
+    util.airdrop_rewards(strategy, beets, beets_whale, tusd, tusd_whale)
     util.stateOfStrat("after airdrop", strategy, token)
 
     vault.updateStrategyDebtRatio(strategy.address, 5_000, {"from": gov})
@@ -185,6 +227,7 @@ def test_change_debt(
 
     vault.updateStrategyDebtRatio(strategy.address, 0, {"from": gov})
     chain.sleep(1)
+    strategy.setDoHealthCheck(False, {'from':gov}) #this harvest will have losses because of slippage
     strategy.harvest({"from": strategist})
     util.stateOfStrat("after harvest", strategy, token)
 
@@ -238,8 +281,8 @@ def test_triggers(
 
 
 # simulate a bad deposit, aka pool has too much of the want you're trying to deposit already
-def test_unbalance_deposit(chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, token2_whale,
-                           token2, token_whale, gov, pool, balancer_vault):
+def test_unbalance_deposit(chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, tusd_whale,
+                           tusd, token_whale, gov, pool, balancer_vault):
     token.approve(vault.address, 2 ** 256 - 1, {"from": user})
     vault.deposit(amount, {"from": user})
     assert token.balanceOf(vault.address) == amount
@@ -251,19 +294,19 @@ def test_unbalance_deposit(chain, token, vault, strategy, user, strategist, amou
 
     print(f'pool rate: {pool.getRate()}')
     tokens = balancer_vault.getPoolTokens(pool.getPoolId())[0]
-    token2Index = 0
-    if (tokens[0] == token2):
-        token2Index = 0
-    elif tokens[1] == token2:
-        token2Index = 1
+    tusdIndex = 0
+    if (tokens[0] == tusd):
+        tusdIndex = 0
+    elif tokens[1] == tusd:
+        tusdIndex = 1
 
-    pooled2 = balancer_vault.getPoolTokens(pool.getPoolId())[1][token2Index]
+    pooled2 = balancer_vault.getPoolTokens(pool.getPoolId())[1][tusdIndex]
     print(balancer_vault.getPoolTokens(pool.getPoolId()))
     print(f'pooled: {pooled2}')
     token.approve(balancer_vault, 2 ** 256 - 1, {'from': token_whale})
 
     # simulate bad pool state by whale to swap out 98% of one side of the pool so pool only has excess want
-    singleSwap = (pool.getPoolId(), 1, token, token2, pooled2 * 0.98, b'0x0')
+    singleSwap = (pool.getPoolId(), 1, token, tusd, pooled2 * 0.98, b'0x0')
     balancer_vault.swap(singleSwap, (token_whale, False, token_whale, False), token.balanceOf(token_whale),
                         2 ** 256 - 1, {'from': token_whale})
     print(balancer_vault.getPoolTokens(pool.getPoolId()))
@@ -278,7 +321,7 @@ def test_unbalance_deposit(chain, token, vault, strategy, user, strategist, amou
 
 
 def test_unbalanced_pool_withdraw(chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX,
-                                  token2_whale, token2,
+                                  tusd_whale, tusd,
                                   gov, pool, balancer_vault):
     # Deposit to the vault
     token.approve(vault.address, amount, {"from": user})
@@ -305,22 +348,22 @@ def test_unbalanced_pool_withdraw(chain, token, vault, strategy, user, strategis
 
     print(f'pool rate: {pool.getRate()}')
     tokens = balancer_vault.getPoolTokens(pool.getPoolId())[0]
-    token2Index = 0
-    if (tokens[0] == token2):
-        token2Index = 0
-    elif tokens[1] == token2:
-        token2Index = 1
+    tusdIndex = 0
+    if (tokens[0] == tusd):
+        tusdIndex = 0
+    elif tokens[1] == tusd:
+        tusdIndex = 1
 
     util.stateOfStrat("after deposit all    ", strategy, token)
     pooled = balancer_vault.getPoolTokens(pool.getPoolId())[1][0]
     print(balancer_vault.getPoolTokens(pool.getPoolId()))
     print(f'pooled: {pooled}')
-    token2.approve(balancer_vault, 2 ** 256 - 1, {'from': token2_whale})
+    tusd.approve(balancer_vault, 2 ** 256 - 1, {'from': tusd_whale})
 
     # simulate bad pool state by whale to swap out 98% of one side of the pool so pool only has 2% of the original want
-    singleSwap = (pool.getPoolId(), 1, token2, token, pooled * 0.98, b'0x0')
-    balancer_vault.swap(singleSwap, (token2_whale, False, token2_whale, False), token2.balanceOf(token2_whale),
-                        2 ** 256 - 1, {'from': token2_whale})
+    singleSwap = (pool.getPoolId(), 1, tusd, token, pooled * 0.98, b'0x0')
+    balancer_vault.swap(singleSwap, (tusd_whale, False, tusd_whale, False), tusd.balanceOf(tusd_whale),
+                        2 ** 256 - 1, {'from': tusd_whale})
     print(balancer_vault.getPoolTokens(pool.getPoolId()))
     print(f'pool rate: {pool.getRate()}')
 

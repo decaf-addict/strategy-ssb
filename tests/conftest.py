@@ -130,6 +130,9 @@ def usdc():
 def beets_whale(accounts):
     yield accounts.at("0xa2503804ec837D1E4699932D58a3bdB767DeA505", force=True)
 
+@pytest.fixture
+def tusd_whale(accounts):
+    yield accounts.at("0x789B5DBd47d7Ca3799f8E9FdcE01bC5E356fcDF1", force=True)
 
 @pytest.fixture
 def wftm_amount(user, wftm, accounts):
@@ -203,7 +206,7 @@ def strategyFactory(strategist, keeper, vault, StrategyFactory, gov, balancer_va
                     management,
                     masterChef,
                     swapStepsBeets):
-    factory = strategist.deploy(StrategyFactory, vault, balancer_vault, pool, masterChef, 5, 5, 100_000, 2 * 60 * 60,
+    factory = strategist.deploy(StrategyFactory, vault, balancer_vault, pool, masterChef, 10, 10, 100_000, 2 * 60 * 60,
                                 58)
     yield factory
 

@@ -1,19 +1,17 @@
 from brownie import Contract
 
 
-def airdrop_rewards(strategy, beets, beets_whale):
+def airdrop_beets_rewards(strategy, beets, beets_whale):
     beets.approve(strategy, 2 ** 256 - 1, {'from': beets_whale})
     beets.transfer(strategy, 500 * 1e18, {'from': beets_whale})
 
-def airdrop_tusd_rewards(strategy, token2, token2_whale):
-    token2.approve(strategy, 2 ** 256 - 1, {'from': token2_whale})
-    token2.transfer(strategy, 3_000 * 1e18, {'from': token2_whale})
+def airdrop_tusd_rewards(strategy, tusd, tusd_whale):
+    tusd.approve(strategy, 2 ** 256 - 1, {'from': tusd_whale})
+    tusd.transfer(strategy, 500 * 1e18, {'from': tusd_whale})
 
-def airdrop_all_rewards(strategy, beets, beets_whale, token2, token2_whale):
-    token2.approve(strategy, 2 ** 256 - 1, {'from': token2_whale})
-    token2.transfer(strategy, 3_000 * 1e18, {'from': token2_whale})
-    token2.approve(strategy, 2 ** 256 - 1, {'from': token2_whale})
-    token2.transfer(strategy, 3_000 * 1e18, {'from': token2_whale})
+def airdrop_rewards(strategy, beets, beets_whale, tusd, tusd_whale):
+    airdrop_beets_rewards(strategy, beets, beets_whale)
+    airdrop_tusd_rewards(strategy, tusd, tusd_whale)
 
 
 def stateOfStrat(msg, strategy, token):
