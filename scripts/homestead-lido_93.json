@@ -1,0 +1,26 @@
+{
+    "config": {
+        "reportsDirectory": "../reports/",
+        "reportFilename": "__ethereum_0x5a98fcbea516cf06857215779fd812ca3bef1b32.json",
+        "jsonSnapshotFilename": "_current-lido.json",
+        "fleekNamespace": "balancer-claims-lido",
+        "offset": 63,
+        "week": 93
+    },
+    "tokens_data": [
+        {
+            "address": "0x1d4439680c489f18ce480e72DeeDc235952AF9C9",
+            "claim_amount": "6304795287050000000000",
+            "hex_proof": [
+                "0x576c768f5a1fb4e00c61697041d1565b3d704d441eee6e65a87dd362606c8bdc",
+                "0x9ea8d4b7adf1e669510ba53a6249d388ffc462e7455faaaf2cd8256bb4f9c0bd",
+                "0x28a0d7976889ea28a80b00ad9757510bdb630ac5096b5c2d767fb0121cce8ec0",
+                "0x3ada06344e1bb68549b74b72f7e562af2ba2e823ecc3f42e6468346dfa1183ca",
+                "0x16511870f9c15453a4c8b72462654c53e19ae1e132b91bd5c2e5947b589dced6",
+                "0xf5e7b91768f63aa12ac45111683fc8b17e3e9a4f295d01381eb23a722dffd642",
+                "0x2d07e9e31d8407ac31db5ddf51201cc0eaaab8ad60ef3ec90044a67b122045c0",
+                "0xfc418ffd2cd5ac65033e7497a28777a968fc152dd3e10b16df3c37b22a16af66"
+            ]
+        }
+    ]
+}
