@@ -456,6 +456,7 @@ contract Strategy is BaseStrategy {
 
     // for partnership rewards like TUSD or airdrops
     function whitelistRewards(address _rewardToken, SwapSteps memory _steps) public isVaultManager {
+        require(address(_rewardToken) != address(want));
         IERC20 token = IERC20(_rewardToken);
         token.approve(address(balancerVault), max);
         rewardTokens.push(token);

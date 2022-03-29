@@ -75,7 +75,7 @@ def token_whale(accounts):
     # 0x93C08a3168fC469F3fC165cd3A471D19a37ca19e USDC
     # 0x8D9AED9882b4953a0c9fa920168fa1FDfA0eBE75 DAI
     # 0x789B5DBd47d7Ca3799f8E9FdcE01bC5E356fcDF1 TUSD
-    return accounts.at("0x93C08a3168fC469F3fC165cd3A471D19a37ca19e", force=True)
+    return accounts.at("0xc5ed2333f8a2c351fca35e5ebadb2a82f5d254c3", force=True)
 
 
 @pytest.fixture
@@ -221,6 +221,8 @@ def strategy(strategist, keeper, vault, strategyFactory, gov, balancer_vault, po
     vault.addStrategy(strategy, 10_000, 0, 2 ** 256 - 1, 1_000, {"from": gov})
     vault.setManagementFee(0, {"from": gov})
     chain.sleep(1)
+    strategy.setParams(25, 25, strategy.maxSingleDeposit(), strategy.minDepositPeriod(),
+            strategy.keep(), strategy.keepBips(), {"from": gov})
     yield strategy
 
 

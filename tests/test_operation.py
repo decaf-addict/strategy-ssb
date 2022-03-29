@@ -5,7 +5,7 @@ import util
 
 
 def test_operation(
-        chain, accounts, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX
+        chain, accounts, token, vault, strategy, user, strategist, amount, gov, RELATIVE_APPROX
 ):
     # Deposit to the vault
     print("Strategy Name:", strategy.name())
@@ -22,9 +22,11 @@ def test_operation(
     # tend()
     strategy.tend({"from": strategist})
 
+    chain.sleep(1)
     # withdrawal
-    vault.withdraw(vault.balanceOf(user), user, 10, {"from": user})
-    assert (pytest.approx(token.balanceOf(user), rel=RELATIVE_APPROX) == user_balance_before)
+    vault.withdraw(vault.balanceOf(user), user, 20, {"from": user})
+    assert (token.balanceOf(user) >= user_balance_before * 0.98) #2% loss
+    assert (token.balanceOf(user) <= user_balance_before)
 
 
 def test_emergency_exit(
@@ -204,7 +206,8 @@ def test_change_debt(
     strategy.harvest({"from": strategist})
     half = int(amount / 2)
 
-    assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == half
+    assert pytest.approx(strategy.estimatedTotalAssets(),
+                         rel=RELATIVE_APPROX) == half or strategy.estimatedTotalAssets() >= half
 
     vault.updateStrategyDebtRatio(strategy.address, 10_000, {"from": gov})
     chain.sleep(1)
