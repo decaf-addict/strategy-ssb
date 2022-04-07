@@ -341,7 +341,7 @@ def test_unbalanced_pool_withdraw(chain, token, vault, strategy, user, strategis
     print(f'lpt normal state: {balancer_vault.getPoolTokens(lpt.getPoolId())}')
     print(f'pooled usdc: {pooled}')
     lower_target = lpt.getTargets()[0]
-    bpt_whale = accounts.at("0x4a65e76be1b4e8dd6ef618277fa55200e3f8f20a", force=True)
+    bpt_whale = accounts.at("0x68d019f64A7aa97e2D4e7363AEE42251D08124Fb", force=True)
 
     # === simulate bad pool state ===
     bpt.approve(balancer_vault, 2 ** 256 - 1, {'from': bpt_whale})
