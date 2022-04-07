@@ -65,6 +65,7 @@ def test_profitable_harvest(
     # Harvest 2: Realize profit
     chain.sleep(1)
     strategy.harvest({"from": strategist})
+
     chain.sleep(3600 * 6)  # 6 hrs needed for profits to unlock
     chain.mine(1)
     profit = token.balanceOf(vault.address)  # Profits go to vault
@@ -250,12 +251,12 @@ def test_unbalance_deposit(chain, token, vault, strategy, user, strategist, amou
                 False,          # fromInternalBalance
                 usdc_whale,     # recipient
                 False           # toInternalBalance
-            ), 
+            ),
             token.balanceOf(usdc_whale),   # token limit
             2**256-1,                   # Deadline
             {'from': usdc_whale}
     )
-    print(f'pool rate after whale swap: {pool.getRate()}')  
+    print(f'pool rate after whale swap: {pool.getRate()}')
 
     with brownie.reverts("BAL#208"):
         tx = strategy.harvest({"from": strategist}) # Error Code BAL#208 BPT_OUT_MIN_AMOUNT - Slippage/front-running protection check failed on a pool join

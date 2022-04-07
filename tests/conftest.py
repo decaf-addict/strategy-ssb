@@ -181,6 +181,10 @@ def pool():
     address = "0x06Df3b2bbB68adc8B0e302443692037ED9f91b42" # staBAL3
     yield Contract(address)
 
+@pytest.fixture
+def gauge_factory():
+    address = "0x4E7bBd911cf1EFa442BC1b2e9Ea01ffE785412EC"
+    yield Contract(address)
 
 @pytest.fixture
 def balWethPoolId():
@@ -221,9 +225,9 @@ def swapStepsLdo2(ldoWethPoolId, wethToken2PoolId, ldo, weth, token2):
 
 
 @pytest.fixture
-def strategy(strategist, keeper, vault, Strategy, gov, balancer_vault, pool, bal, ldo, management, swapStepsBal,
+def strategy(strategist, keeper, vault, Strategy, gov, balancer_vault, gauge_factory, pool, bal, ldo, management, swapStepsBal,
              swapStepsLdo):
-    strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, 5, 5, 1_000_000, 2 * 60 * 60)
+    strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, gauge_factory, 5, 5, 1_000_000, 2 * 60 * 60)
     strategy.setKeeper(keeper, {'from': gov})
     strategy.whitelistRewards(bal, swapStepsBal, {'from': gov})
     strategy.whitelistRewards(ldo, swapStepsLdo, {'from': gov})
