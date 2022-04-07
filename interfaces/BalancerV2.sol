@@ -20,7 +20,6 @@ interface IBalancerPool is IERC20 {
         bytes userData;
     }
 
-    // virtual price of bpt
     function getRate() external view returns (uint);
 
     function getPoolId() external view returns (bytes32 poolId);
@@ -51,6 +50,13 @@ interface IBalancerVault {
      * The `userData` field is ignored by the Vault, but forwarded to the Pool in the `onSwap` hook, and may be
      * used to extend swap behavior.
      */
+
+    /// In swaps of the type given_in you're pushing a token into a pipeline and getting another one at the end.
+    /// At each step along the way, the output of a swap becomes input of the next.
+    /// @param _amount = amount sent to pool to trade
+    /// In swaps of the type given_out you're pulling a token from a pipeline; the last step pulls some other token from your own account.
+    /// At each step along the way, the tokens that will go into a swap will be the ones that come out of the next.
+    /// @param _amount = amount desired to be returned by pool
     struct BatchSwapStep {
         bytes32 poolId;
         uint256 assetInIndex;
@@ -95,8 +101,8 @@ interface IBalancerVault {
     struct SingleSwap {
         bytes32 poolId;
         SwapKind kind;
-        IAsset assetIn;
-        IAsset assetOut;
+        address assetIn;
+        address assetOut;
         uint256 amount;
         bytes userData;
     }
@@ -196,11 +202,26 @@ interface IBalancerVault {
     function batchSwap(
         SwapKind kind,
         BatchSwapStep[] memory swaps,
-        IAsset[] memory assets,
+        address[] memory assets,
         FundManagement memory funds,
         int256[] memory limits,
         uint256 deadline
     ) external payable returns (int256[] memory);
+
+    // CAVEAT!! Do not call this after a batchSwap in the same txn
+    function queryBatchSwap(
+        SwapKind kind,
+        BatchSwapStep[] memory swaps,
+        address[] memory assets,
+        FundManagement memory funds
+    ) external returns (int256[] memory);
+
+    function flashLoan(
+        address recipient,
+        IERC20[] memory tokens,
+        uint256[] memory amounts,
+        bytes memory userData
+    ) external;
 }
 
 interface IAsset {
@@ -235,4 +256,54 @@ interface IBalancerVaultHelper {
         address recipient,
         IBalancerVault.ExitPoolRequest memory request
     ) external view returns (uint256 bptIn, uint256[] memory amountsOut);
+}
+
+interface IFlashLoanRecipient {
+    /**
+     * @dev When `flashLoan` is called on the Vault, it invokes the `receiveFlashLoan` hook on the recipient.
+     *
+     * At the time of the call, the Vault will have transferred `amounts` for `tokens` to the recipient. Before this
+     * call returns, the recipient must have transferred `amounts` plus `feeAmounts` for each token back to the
+     * Vault, or else the entire flash loan will revert.
+     *
+     * `userData` is the same value passed in the `IVault.flashLoan` call.
+     */
+    function receiveFlashLoan(
+        IERC20[] memory tokens,
+        uint256[] memory amounts,
+        uint256[] memory feeAmounts,
+        bytes memory userData
+    ) external;
+}
+
+interface ILinearPool is IBalancerPool {
+    function getVault() external view returns (address);
+
+    function getMainToken() external view returns (address);
+
+    function getWrappedToken() external view returns (address);
+
+    function getBptIndex() external view returns (uint256);
+
+    function getMainIndex() external view returns (uint256);
+
+    function getWrappedIndex() external view returns (uint256);
+
+    // Price rates
+
+    function getWrappedTokenRate() external view returns (uint256);
+
+    function getTargets() external view returns (uint256 lowerTarget, uint256 upperTarget);
+
+}
+
+interface IStablePhantomPool is IBalancerPool {
+
+    /**
+     * @dev Returns the number of tokens in circulation.
+     *
+     * In other pools, this would be the same as `totalSupply`, but since this pool pre-mints all BPT, `totalSupply`
+     * remains constant, whereas `virtualSupply` increases as users join the pool and decreases as they exit it.
+     */
+    function getVirtualSupply() external view returns (uint256);
 }

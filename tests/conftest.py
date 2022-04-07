@@ -178,7 +178,8 @@ def balancer_vault():
 def pool():
     # 0x06Df3b2bbB68adc8B0e302443692037ED9f91b42 stable pool
     # 0x32296969Ef14EB0c6d29669C550D4a0449130230 metastable eth pool
-    address = "0x06Df3b2bbB68adc8B0e302443692037ED9f91b42" # staBAL3
+    # 0x7B50775383d3D6f0215A8F290f2C9e2eEBBEceb2 boosted
+    address = "0x7B50775383d3D6f0215A8F290f2C9e2eEBBEceb2" # boosted
     yield Contract(address)
 
 
@@ -226,7 +227,6 @@ def strategy(strategist, keeper, vault, Strategy, gov, balancer_vault, pool, bal
     strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, 5, 5, 1_000_000, 2 * 60 * 60)
     strategy.setKeeper(keeper, {'from': gov})
     strategy.whitelistRewards(bal, swapStepsBal, {'from': gov})
-    strategy.whitelistRewards(ldo, swapStepsLdo, {'from': gov})
     vault.addStrategy(strategy, 10_000, 0, 2 ** 256 - 1, 1_000, {"from": gov})
     chain.sleep(1)
     yield strategy
