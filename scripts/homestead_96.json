@@ -1,0 +1,102 @@
+{
+    "config": {
+        "reportsDirectory": "../reports/",
+        "reportFilename": "_totals.json",
+        "jsonSnapshotFilename": "_current.json",
+        "fleekNamespace": "balancer-claims",
+        "offset": 20,
+        "week": 96
+    },
+    "tokens_data": [
+        {
+            "address": "0x3B7c81daa0F7C897b3e09352E1Ca2fBE93Ac234D",
+            "claim_amount": "3454549165600000000000",
+            "hex_proof": [
+                "0xa0655c7511c7f88799f1254731d1c76268d80585e5b3bb343e5944f71c0be395",
+                "0x19d1a2252113accac5fe28ececd3ba62935b4816237bcb1823e52d20615210df",
+                "0x3d6d1013d1ae671ee8da0c95b18d6158ebf9e2f83f827f7bfa57ff3e1db75b86",
+                "0x8c9cf73ef73528d394c1b0017a391bb24db82de5ad602642e7be9b8266842e66",
+                "0xdfa8949228386a2baada03d02a353106982ad58bb2b39fbbc9f29bbb18583a02",
+                "0xc60f5dabd832d8deaaa420e45a6babf2134cb5387775f57106dfd15cc0c3a440",
+                "0x9830616ab6f6da6a03daa029f97cc79977d0c7151090aef25fcc60ba76003cfc",
+                "0x8c74585680809db425bfc072989d327564c7af6cf41dc590ab54aa6123df7a7c",
+                "0xd618f9a3f0762a2080d552c81857ea4116520f68aba0b8595437915809909ee4",
+                "0xdfc6e5647ec2cf0163aeee2baee895b84b11cff4edea226b0b302fbd9a06879f",
+                "0x012cc43d576ca556929ffbfa2831ae79816a03f6ea5e090513812ddc4cbd07a0",
+                "0x0d5208295e9dff6301ed118c076e8308cc36d34508524420c882ea3133e5ea76",
+                "0xd8b87b994eadbc5885e5fa0e6c8e7498f5cddf0f36f6c0f32226feda0fe7e688"
+            ]
+        },
+        {
+            "address": "0xf0E5f920F8daf2a01ed473D67e74565e7a4a1979",
+            "claim_amount": "348392177720000000000",
+            "hex_proof": [
+                "0xff412799207cf1e6a0b4eb8b889463a12c33827518f2a559d5f4329895d54b81",
+                "0x276529a9c281408edd8c60c7c13f5800e988f22d62489f90501f71cf8b393562",
+                "0x46ce97626aa300b1f1ee2eec05ea62dd1e04e44860cdbb87ecc394be2618bb63",
+                "0x81931ef948b2864c1dfecc8f4cc93115aa77af5ae2b27d454ac505e483833928",
+                "0x7c2341363f48af6c7a0859bd96f798725e8a549e09f60761731c80c02f7e300b",
+                "0x9cf05e9f9c7ced1d8d878a81f1e1896245135478bfc6047272f5c6d14682080a",
+                "0x7a1c2f1ba590c3c9d8536bcd25f04c950ed4788e1f93ee0841e10a183be00370",
+                "0xe983d14f92e86cd5ade1af20b515b9b1b1d594253707b3cdf9f584aa5d720846",
+                "0x5e92f62062cb56033de0cade8a71b66850d56cebe76431d37ef882217d5e57de"
+            ]
+        },
+        {
+            "address": "0xC7af91cdDDfC7c782671eFb640A4E4C4FB6352B4",
+            "claim_amount": "3926578127720000000000",
+            "hex_proof": [
+                "0xd9659441f487456519f1a693fd8d6ca48ede188b2bf6b89900232936989872f4",
+                "0x97aa22ea8b38589905e9419c6ceecf7c76146ee3d12747ae6ddceeb6ab72d162",
+                "0x5e38610f7e9f29128efc032c81e4ea6a0bff45752b67816aa123704e992c9914",
+                "0xe3bfc0b2d9c80070377a2880a12d5c4a36f09c7395e1fd31aaf7832fe40b44f0",
+                "0x9e9b79275aadfedea6c583c041af09984dbb2990f7a915167e4249ebf9636ba7",
+                "0x78a9fca3f0a6deeab7e230a74460618010cf8ab8850f486d53b15f1ac5cbd481",
+                "0x77dd4a0a592a564a6c2c0140d52cdd10f502030bdb21a60e9a251b4de92d02d7",
+                "0xea1f435f90efc512cd46fbbe81d340b08061912ae42465b686bee3d9a6d0d0e3",
+                "0x3f189abeaa1db538085f5e028f162c679218f3119d4a97c58d86d4653c197339",
+                "0xffc7dbeac7b738de1455bec25248180a6b597db4471e2efce82277ae5e0ccbd0",
+                "0x29bcf74059df395b27620bf67cd964e0e47762e596e4da59dae34bcda0caef10",
+                "0x5e92f62062cb56033de0cade8a71b66850d56cebe76431d37ef882217d5e57de"
+            ]
+        },
+        {
+            "address": "0xf2901406A1743ac032863777c61f1d61b59115fd",
+            "claim_amount": "481595519750000000000",
+            "hex_proof": [
+                "0x563d01f6c2d1c47ddc6e712b4907c2513b79ffc234cab0fa10fb8fafb6a7d401",
+                "0xdfb2a730594618309f7590ef4a513e0e4b430a1a79a0829a272a40d6126513ed",
+                "0x0c58e7f425fb3a79dd8c8994840c8820b44864093c407d29428e27ec1c7b51c9",
+                "0x86abb488ff6275df99a8f4f3ef30d718226fc0328fb73e56f3849219186afd48",
+                "0x8d366e5c40d442781c6c0a301f2a2f64546652de926bd58c2b68ee7dda51f5e5",
+                "0x51e713bf1602e8a6d6a9134a0cee140c2ce4b1da33eafeb71a538d839bdce3f0",
+                "0x57faad3631846d63a482d2f16ee1474b80f6d9dd350ca629169daca279c80ec0",
+                "0x92885b74c247c2dfb566491359ac611c96805cb5ba99ede0cd25aa39fe837fd4",
+                "0x330c3d6dd025e2141e44143ef5fc7e0d7095f3567cddaeddd30f541b94dbc89b",
+                "0x1ef02f734000656c0e579d7026700e8f83778fa868454694e1e4addad2d01827",
+                "0xba7a4b3dd88ffc6b97c45a770b52c219ab76a2ca7ba8772196862f481e3ea0fd",
+                "0xd590417e02563cfbbf3b751a5f37bb2c7e4911916acd7d54e0f515aa6a20a3b2",
+                "0xd8b87b994eadbc5885e5fa0e6c8e7498f5cddf0f36f6c0f32226feda0fe7e688"
+            ]
+        },
+        {
+            "address": "0x1d4439680c489f18ce480e72DeeDc235952AF9C9",
+            "claim_amount": "190744257110000000000",
+            "hex_proof": [
+                "0xa802e2b8f20038d180169da68f88308dc6e626423ce2a045e4a00313fe4ebb42",
+                "0x188628c792f20e10680be971c470685973a71a6dea9416084901db000761154c",
+                "0x4983b7a8f3dbb68cb50886b6290c5910861290f1c3219d53733ad7cd38fd3dc9",
+                "0xf204be3b37beaa7188d94c13614c4f956a24b8cee657510d0b4f461809efcf79",
+                "0x8a4537ed7231dc39eedfa67d0cf8d7b75b383547bbeeb6413ba219283db4e4aa",
+                "0x12e022a15054a7f2632b72108da365fa7d41e36fe742ff56d6509f1fe1b254bd",
+                "0x6a06ed86bffa300bc90b25f0b22cbc5a11db037150a7a8d9cc0ba2fee466d4d5",
+                "0xbc096af023ff47196334414b2e813f0b4abca8f9f7ab36bd92ea2d45526eb59a",
+                "0x0353059106f6c214852b09a75e6b76853f17797d50798548e633544211478d87",
+                "0xdfc6e5647ec2cf0163aeee2baee895b84b11cff4edea226b0b302fbd9a06879f",
+                "0x012cc43d576ca556929ffbfa2831ae79816a03f6ea5e090513812ddc4cbd07a0",
+                "0x0d5208295e9dff6301ed118c076e8308cc36d34508524420c882ea3133e5ea76",
+                "0xd8b87b994eadbc5885e5fa0e6c8e7498f5cddf0f36f6c0f32226feda0fe7e688"
+            ]
+        }
+    ]
+}
