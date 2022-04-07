@@ -22,6 +22,15 @@ contract Strategy is BaseStrategy {
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
 
+    modifier isVaultManager {
+        checkVaultManagers();
+        _;
+    }
+
+    function checkVaultManagers() internal {
+        require(msg.sender == vault.governance() || msg.sender == vault.management());
+    }
+
     IBalancerVault public balancerVault;
     IBalancerPool public bpt;
     ILiquidityGaugeFactory public gaugeFactory;
@@ -281,7 +290,7 @@ contract Strategy is BaseStrategy {
     }
 
     // HELPERS //
-    function claimAndSellRewards(bool _doSellRewards) external onlyVaultManagers {
+    function claimAndSellRewards(bool _doSellRewards) external isVaultManager {
         _claimRewards();
         if (_doSellRewards){
             _sellRewards();
@@ -389,7 +398,7 @@ contract Strategy is BaseStrategy {
         );
     }
 
-    function sellBpt(uint256 _amountBpts) external onlyVaultManagers {
+    function sellBpt(uint256 _amountBpts) external isVaultManager {
         _sellBpt(_amountBpts);
     }
 
@@ -406,14 +415,14 @@ contract Strategy is BaseStrategy {
     }
 
     // for partnership rewards like Lido or airdrops
-    function whitelistRewards(address _rewardToken, SwapSteps memory _steps) public onlyVaultManagers {
+    function whitelistRewards(address _rewardToken, SwapSteps memory _steps) public isVaultManager {
         IERC20 token = IERC20(_rewardToken);
         token.approve(address(balancerVault), max);
         rewardTokens.push(token);
         swapSteps.push(_steps);
     }
 
-    function delistAllRewards() public onlyVaultManagers {
+    function delistAllRewards() public isVaultManager {
         for (uint i = 0; i < rewardTokens.length; i++) {
             rewardTokens[i].approve(address(balancerVault), 0);
         }
@@ -426,7 +435,7 @@ contract Strategy is BaseStrategy {
         return rewardTokens.length;
     }
 
-    function setParams(uint256 _maxSlippageIn, uint256 _maxSlippageOut, uint256 _maxSingleDeposit, uint256 _minDepositPeriod) public onlyVaultManagers {
+    function setParams(uint256 _maxSlippageIn, uint256 _maxSlippageOut, uint256 _maxSingleDeposit, uint256 _minDepositPeriod) public isVaultManager {
         require(_maxSlippageIn <= basisOne, "maxSlippageIn too high");
         maxSlippageIn = _maxSlippageIn;
 
@@ -437,7 +446,7 @@ contract Strategy is BaseStrategy {
         minDepositPeriod = _minDepositPeriod;
     }
 
-    function setToggles(bool _doSellRewards, bool _doClaimRewards) external onlyVaultManagers {
+    function setToggles(bool _doSellRewards, bool _doClaimRewards) external isVaultManager {
         doSellRewards = _doSellRewards;
         doClaimRewards = _doClaimRewards;
     }
