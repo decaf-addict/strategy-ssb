@@ -7,13 +7,13 @@ import test_operation
 def test_clone(accounts, Strategy, strategy, strategist, rewards, keeper, token2, user, vault, vault2, amount2,
                balancer_vault,
                pool, chain, gov,
-               RELATIVE_APPROX,
+               RELATIVE_APPROX, strategyFactory,
                bal, bal_whale, ldo, weth, weth_amout,
                ldo_whale, swapStepsBal2, swapStepsLdo2, management, gauge_factory):
     with brownie.reverts("Strategy already initialized"):
         strategy.initialize(vault, strategist, rewards, keeper, balancer_vault, pool, gauge_factory, 10, 10, 100_000, 2 * 60 * 60)
 
-    transaction = strategy.clone(vault2, strategist, rewards, keeper, balancer_vault, pool, gauge_factory, 10, 10, 100_000,
+    transaction = strategyFactory.clone(vault2, strategist, rewards, keeper, balancer_vault, pool, gauge_factory, 10, 10, 100_000,
                                  2 * 60 * 60)
     cloned_strategy = Strategy.at(transaction.return_value)
 

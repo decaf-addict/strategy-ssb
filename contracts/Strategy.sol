@@ -71,7 +71,6 @@ contract Strategy is BaseStrategy {
     uint256 public minDepositPeriod; // seconds
     uint256 public lastDepositTime;
     uint256 internal constant basisOne = 10000;
-    bool internal isOriginal = true;
 
     constructor(
         address _vault,
@@ -150,42 +149,6 @@ contract Strategy is BaseStrategy {
         keepBips = 1000;
         keep = governance();
     }
-
-    event Cloned(address indexed clone);
-
-    function clone(
-        address _vault,
-        address _strategist,
-        address _rewards,
-        address _keeper,
-        address _balancerVault,
-        address _balancerPool,
-        address _gaugeFactory,
-        uint256 _maxSlippageIn,
-        uint256 _maxSlippageOut,
-        uint256 _maxSingleDeposit,
-        uint256 _minDepositPeriod
-    ) external returns (address payable newStrategy) {
-        require(isOriginal);
-
-        bytes20 addressBytes = bytes20(address(this));
-
-        assembly {
-        // EIP-1167 bytecode
-            let clone_code := mload(0x40)
-            mstore(clone_code, 0x3d602d80600a3d3981f3363d3d373d3d3d363d73000000000000000000000000)
-            mstore(add(clone_code, 0x14), addressBytes)
-            mstore(add(clone_code, 0x28), 0x5af43d82803e903d91602b57fd5bf30000000000000000000000000000000000)
-            newStrategy := create(0, clone_code, 0x37)
-        }
-
-        Strategy(newStrategy).initialize(
-            _vault, _strategist, _rewards, _keeper, _balancerVault, _balancerPool, _gaugeFactory, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod
-        );
-
-        emit Cloned(newStrategy);
-    }
-
 
     // ******** OVERRIDE THESE METHODS FROM BASE CONTRACT ************
 
@@ -350,7 +313,9 @@ contract Strategy is BaseStrategy {
         uint256 balBefore = balanceOfReward(0);
         gauge.claim_rewards(address(this));
         uint256 keepAmount = balanceOfReward(0).sub(balBefore).mul(keepBips).div(basisOne);
-        rewardTokens[0].safeTransfer(keep, keepAmount);
+        if (keepAmount > 0) {
+            rewardTokens[0].safeTransfer(keep, keepAmount);
+        }
     }
 
     function collectTradingFees() external isVaultManager {
@@ -497,13 +462,10 @@ contract Strategy is BaseStrategy {
         gauge.withdraw(Math.min(balanceOfStakedBpt(), _amount));
     }
 
-    function setKeepBips(uint256 _bips) external isVaultManager {
-        require(_bips < basisOne);
-        keepBips = _bips;
-    }
-
-    function setKeep(address _keep) external onlyGovernance {
+    function setKeepParams(address _keep, uint256 _keepBips) external onlyGovernance {
+        require(keepBips <= basisOne);
         keep = _keep;
+        keepBips = _keepBips;
     }
 
     // Balancer requires this contract to be payable, so we add ability to sweep stuck ETH
