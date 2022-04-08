@@ -41,8 +41,15 @@ contract Strategy is BaseStrategy {
     bytes32 public balancerPoolId;
     uint8 public numTokens;
     uint8 public tokenIndex;
-    bool public doSellRewards = true;
-    bool public doClaimRewards = true;
+    Toggles public toggles;
+    address public keep;
+    uint256 public keepBips;
+
+    struct Toggles {
+        bool doSellRewards;
+        bool doClaimRewards;
+        bool doCollectTradingFees;
+    }
 
     struct SwapSteps {
         bytes32[] poolIds;
@@ -108,8 +115,6 @@ contract Strategy is BaseStrategy {
     internal {
         // health.ychad.eth
         healthCheck = address(0xDDCea799fF1699e98EDF118e0629A974Df7DF012);
-        doSellRewards = true;
-        doClaimRewards = true;
         bpt = IBalancerPool(_balancerPool);
         balancerPoolId = bpt.getPoolId();
         balancerVault = IBalancerVault(_balancerVault);
@@ -139,6 +144,11 @@ contract Strategy is BaseStrategy {
         require(address(gauge.lp_token()) == address(bpt));
         want.safeApprove(address(balancerVault), max);
         IERC20(bpt).safeApprove(address(gauge), max);
+
+        toggles = Toggles({doSellRewards : true, doClaimRewards : true, doCollectTradingFees : true});
+
+        keepBips = 1000;
+        keep = governance();
     }
 
     event Cloned(address indexed clone);
@@ -195,12 +205,14 @@ contract Strategy is BaseStrategy {
         uint256 beforeWant = balanceOfWant();
 
         // 2 forms of profit. Incentivized rewards (BAL+other) and pool fees (want)
-        collectTradingFees();
+        if (toggles.doCollectTradingFees) {
+            _collectTradingFees();
+        }
         // this would allow finer control over harvesting to get credits in without selling
-        if (doClaimRewards) {
+        if (toggles.doClaimRewards) {
             _claimRewards();
         }
-        if (doSellRewards) {
+        if (toggles.doSellRewards) {
             _sellRewards();
         }
 
@@ -237,7 +249,7 @@ contract Strategy is BaseStrategy {
 
         uint256 _unstakedBpt = balanceOfUnstakedBpt();
         if (_unstakedBpt > 0) {
-            stakeBpt(_unstakedBpt);
+            _stakeBpt(_unstakedBpt);
         }
     }
 
@@ -251,7 +263,7 @@ contract Strategy is BaseStrategy {
             uint256 _unstakedBpt = balanceOfUnstakedBpt();
 
             if (toExitAmount > _unstakedBpt) {
-                unstakeBpt(toExitAmount.sub(_unstakedBpt));
+                _unstakeBpt(toExitAmount.sub(_unstakedBpt));
             }
             _sellBpt(toExitAmount);
 
@@ -264,14 +276,14 @@ contract Strategy is BaseStrategy {
     }
 
     function liquidateAllPositions() internal override returns (uint256 liquidated) {
-        unstakeBpt(balanceOfStakedBpt());
+        _unstakeBpt(balanceOfStakedBpt());
         _sellBpt(balanceOfUnstakedBpt());
         liquidated = balanceOfWant();
         return liquidated;
     }
 
     function prepareMigration(address _newStrategy) internal override {
-        unstakeBpt(balanceOfStakedBpt());
+        _unstakeBpt(balanceOfStakedBpt());
         bpt.transfer(_newStrategy, balanceOfUnstakedBpt());
         for (uint i = 0; i < rewardTokens.length; i++) {
             IERC20 token = rewardTokens[i];
@@ -293,7 +305,7 @@ contract Strategy is BaseStrategy {
     // HELPERS //
     function claimAndSellRewards(bool _doSellRewards) external isVaultManager {
         _claimRewards();
-        if (_doSellRewards){
+        if (_doSellRewards) {
             _sellRewards();
         }
     }
@@ -329,18 +341,30 @@ contract Strategy is BaseStrategy {
         }
     }
 
-    function _claimRewards() internal {
-        gauge.claim_rewards(address(this));
+    function claimRewards() external isVaultManager {
+        _claimRewards();
     }
 
-    function collectTradingFees() internal {
+    // this assumes that BAL is always index 0. If not, we can delist then whitelist again to make it at 0
+    function _claimRewards() internal {
+        uint256 balBefore = balanceOfReward(0);
+        gauge.claim_rewards(address(this));
+        uint256 keepAmount = balanceOfReward(0).sub(balBefore).mul(keepBips).div(basisOne);
+        rewardTokens[0].safeTransfer(keep, keepAmount);
+    }
+
+    function collectTradingFees() external isVaultManager {
+        _collectTradingFees();
+    }
+
+    function _collectTradingFees() internal {
         uint256 total = estimatedTotalAssets();
         uint256 debt = vault.strategies(address(this)).totalDebt;
         if (total > debt) {
             uint256 profit = tokensToBpts(total.sub(debt));
             uint256 _unstakedBpt = balanceOfUnstakedBpt();
             if (profit > _unstakedBpt) {
-                unstakeBpt(profit.sub(_unstakedBpt));
+                _unstakeBpt(profit.sub(_unstakedBpt));
                 _sellBpt(balanceOfUnstakedBpt());
             }
             _sellBpt(Math.min(profit, balanceOfUnstakedBpt()));
@@ -447,27 +471,45 @@ contract Strategy is BaseStrategy {
         minDepositPeriod = _minDepositPeriod;
     }
 
-    function setToggles(bool _doSellRewards, bool _doClaimRewards) external isVaultManager {
-        doSellRewards = _doSellRewards;
-        doClaimRewards = _doClaimRewards;
+    function setToggles(bool _doSellRewards, bool _doClaimRewards, bool _doCollectTradingFees) external isVaultManager {
+        toggles.doSellRewards = _doSellRewards;
+        toggles.doClaimRewards = _doClaimRewards;
+        toggles.doCollectTradingFees = _doCollectTradingFees;
     }
 
     function getSwapSteps() public view returns (SwapSteps[] memory){
         return swapSteps;
     }
 
-    function stakeBpt(uint256 _amount) internal {
+    function stakeBpt(uint256 _amount) external isVaultManager {
+        _stakeBpt(_amount);
+    }
+
+    function _stakeBpt(uint256 _amount) internal {
         gauge.deposit(Math.min(balanceOfUnstakedBpt(), _amount), address(this));
     }
 
-    function unstakeBpt(uint256 _amount) internal {
+    function unstakeBpt(uint256 _amount) external isVaultManager {
+        _unstakeBpt(_amount);
+    }
+
+    function _unstakeBpt(uint256 _amount) internal {
         gauge.withdraw(Math.min(balanceOfStakedBpt(), _amount));
+    }
+
+    function setKeepBips(uint256 _bips) external isVaultManager {
+        require(_bips < basisOne);
+        keepBips = _bips;
+    }
+
+    function setKeep(address _keep) external onlyGovernance {
+        keep = _keep;
     }
 
     // Balancer requires this contract to be payable, so we add ability to sweep stuck ETH
     function sweepETH() public onlyGovernance {
-        (bool success, ) = governance().call{value: address(this).balance}("");
-        require(success,"!FailedETHSweep");
+        (bool success,) = governance().call{value : address(this).balance}("");
+        require(success, "!FailedETHSweep");
     }
 
     receive() external payable {}
