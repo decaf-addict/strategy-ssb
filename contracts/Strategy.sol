@@ -304,10 +304,6 @@ contract Strategy is BaseStrategy {
         }
     }
 
-    function claimRewards() external isVaultManager {
-        _claimRewards();
-    }
-
     // this assumes that BAL is always index 0. If not, we can delist then whitelist again to make it at 0
     function _claimRewards() internal {
         uint256 balBefore = balanceOfReward(0);
