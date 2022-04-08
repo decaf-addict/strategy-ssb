@@ -223,8 +223,6 @@ def test_unbalance_deposit(chain, token, vault, strategy, user, strategist, amou
                                   ldo, gov, pool, balancer_vault):
     # added in setup
     assert strategy.numRewards() == 2
-    strategy.delistAllRewards({'from': gov})
-    assert strategy.numRewards() == 0
 
     token.approve(vault.address, 2**256-1, {"from": user})
     vault.deposit(amount, {"from": user})
