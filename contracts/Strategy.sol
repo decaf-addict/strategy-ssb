@@ -153,7 +153,7 @@ contract Strategy is BaseStrategy {
     // ******** OVERRIDE THESE METHODS FROM BASE CONTRACT ************
 
     function name() external view override returns (string memory) {
-        return string(abi.encodePacked("SSBv2 ", ERC20(address(want)).symbol(), " ", bpt.symbol()));
+        return string(abi.encodePacked("SSBv3 ", ERC20(address(want)).symbol(), " ", bpt.symbol()));
     }
 
     function estimatedTotalAssets() public view override returns (uint256) {
