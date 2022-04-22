@@ -23,9 +23,10 @@ def test_vault_shutdown_can_withdraw(
     vault.setEmergencyShutdown(True)
 
     ## Withdraw (does it work, do you get what you expect)
-    vault.withdraw(vault.balanceOf(user), user, 10, {"from": user})
+    vault.withdraw(vault.balanceOf(user), user, 20, {"from": user})
 
-    assert pytest.approx(token.balanceOf(user), rel=RELATIVE_APPROX) == amount
+    assert token.balanceOf(user) >= amount * 0.98
+    assert token.balanceOf(user) <= amount
 
 
 def test_basic_shutdown(
