@@ -149,7 +149,6 @@ contract Strategy is BaseStrategy {
 
         require(address(gauge) != address(0));
         require(address(gauge.lp_token()) == address(bpt));
-        minter.setMinterApproval(address(minter), true);
         want.safeApprove(address(balancerVault), max);
         IERC20(bpt).safeApprove(address(gauge), max);
 
