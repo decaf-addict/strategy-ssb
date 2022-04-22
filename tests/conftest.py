@@ -191,6 +191,11 @@ def gauge_factory():
     address = "0x4E7bBd911cf1EFa442BC1b2e9Ea01ffE785412EC"
     yield Contract(address)
 
+@pytest.fixture
+def balancer_minter():
+    address = "0x239e55F427D44C3cc793f49bFB507ebe76638a2b"
+    yield Contract(address)
+
 
 @pytest.fixture
 def balWethPoolId():
@@ -236,8 +241,8 @@ def swapStepsLdo2(ldoWethPoolId, wethToken2PoolId, ldo, weth, token2):
 
 
 @pytest.fixture
-def strategyFactory(strategist, keeper, vault, StrategyFactory, balancer_vault, gov, pool, gauge_factory):
-    factory = strategist.deploy(StrategyFactory, vault, balancer_vault, pool, gauge_factory, 5, 5, 1_000_000,
+def strategyFactory(strategist, keeper, vault, StrategyFactory, balancer_vault, gov, pool, gauge_factory, balancer_minter):
+    factory = strategist.deploy(StrategyFactory, vault, balancer_vault, pool, gauge_factory, balancer_minter, 5, 5, 1_000_000,
                                 2 * 60 * 60)
     yield factory
 
@@ -248,6 +253,7 @@ def strategy(strategist, keeper, vault, Strategy, strategyFactory, gov, balancer
              swapStepsLdo):
     strategy = Strategy.at(strategyFactory.original(), owner=gov)
     strategy.setKeeper(keeper, {'from': gov})
+    vault.setManagementFee(0, {'from': gov})
     strategy.whitelistRewards(bal, swapStepsBal, {'from': gov})
     strategy.whitelistRewards(ldo, swapStepsLdo, {'from': gov})
     vault.addStrategy(strategy, 10_000, 0, 2 ** 256 - 1, 1_000, {"from": gov})

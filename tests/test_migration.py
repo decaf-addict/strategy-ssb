@@ -3,6 +3,7 @@ from brownie import Contract, accounts
 import test_operation
 import util
 
+
 def test_migration(
         chain,
         token,
@@ -16,6 +17,7 @@ def test_migration(
         RELATIVE_APPROX,
         balancer_vault,
         pool,
+        balancer_minter,
         gauge_factory
 ):
     # Deposit to the vault and harvest
@@ -26,7 +28,8 @@ def test_migration(
     assert pytest.approx(strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount
 
     # migrate to a new strategy
-    new_strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, gauge_factory, 5, 5, 100_000, 2 * 60 * 60)
+    new_strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, gauge_factory, balancer_minter, 5, 5,
+                                     100_000, 2 * 60 * 60)
     vault.migrateStrategy(strategy, new_strategy, {"from": gov})
     assert (pytest.approx(new_strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount)
 

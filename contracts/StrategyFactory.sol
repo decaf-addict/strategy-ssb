@@ -15,12 +15,13 @@ contract StrategyFactory {
         address _balancerVault,
         address _balancerPool,
         address _gaugeFactory,
+        address _minter,
         uint256 _maxSlippageIn,
         uint256 _maxSlippageOut,
         uint256 _maxSingleDeposit,
         uint256 _minDepositPeriod
     ) public {
-        Strategy _original = new Strategy(_vault, _balancerVault, _balancerPool, _gaugeFactory, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod);
+        Strategy _original = new Strategy(_vault, _balancerVault, _balancerPool, _gaugeFactory, _minter, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod);
         emit Deployed(address(_original));
 
         original = address(_original);
@@ -45,13 +46,7 @@ contract StrategyFactory {
         address _strategist,
         address _rewards,
         address _keeper,
-        address _balancerVault,
-        address _balancerPool,
-        address _gaugeFactory,
-        uint256 _maxSlippageIn,
-        uint256 _maxSlippageOut,
-        uint256 _maxSingleDeposit,
-        uint256 _minDepositPeriod
+        address _balancerPool
     ) external returns (address payable newStrategy) {
         // Copied from https://github.com/optionality/clone-factory/blob/master/contracts/CloneFactory.sol
         bytes20 addressBytes = bytes20(original);
@@ -69,9 +64,20 @@ contract StrategyFactory {
             )
             newStrategy := create(0, clone_code, 0x37)
         }
-
+        Strategy o = Strategy(payable(original));
         Strategy(newStrategy).initialize(
-            _vault, _strategist, _rewards, _keeper, _balancerVault, _balancerPool, _gaugeFactory, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod
+            _vault,
+            _strategist,
+            _rewards,
+            _keeper,
+            address(o.balancerVault()),
+            _balancerPool,
+            address(o.gaugeFactory()),
+            address(o.minter()),
+            o.maxSlippageIn(),
+            o.maxSlippageOut(),
+            o.maxSingleDeposit(),
+            o.minDepositPeriod()
         );
         emit Cloned(newStrategy);
     }

@@ -13,6 +13,8 @@ import {Math} from "@openzeppelin/contracts/math/Math.sol";
 import "../interfaces/BalancerV2.sol";
 import "../interfaces/IStakingLiquidityGauge.sol";
 import "../interfaces/ILiquidityGaugeFactory.sol";
+import "../interfaces/BalancerMinter.sol";
+
 
 interface IName {
     function name() external view returns (string memory);
@@ -35,6 +37,7 @@ contract Strategy is BaseStrategy {
     IBalancerPool public bpt;
     ILiquidityGaugeFactory public gaugeFactory;
     IStakingLiquidityGauge public gauge;
+    IBalancerMinter public minter;
     IERC20[] public rewardTokens;
     IAsset[] internal assets;
     SwapSteps[] internal swapSteps;
@@ -71,18 +74,20 @@ contract Strategy is BaseStrategy {
     uint256 public minDepositPeriod; // seconds
     uint256 public lastDepositTime;
     uint256 internal constant basisOne = 10000;
+    IERC20 internal constant BAL = IERC20(0xba100000625a3754423978a60c9317c58a424e3D);
 
     constructor(
         address _vault,
         address _balancerVault,
         address _balancerPool,
         address _gaugeFactory,
+        address _minter,
         uint256 _maxSlippageIn,
         uint256 _maxSlippageOut,
         uint256 _maxSingleDeposit,
         uint256 _minDepositPeriod)
     public BaseStrategy(_vault){
-        _initializeStrat(_vault, _balancerVault, _balancerPool, _gaugeFactory, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod);
+        _initializeStrat(_vault, _balancerVault, _balancerPool, _gaugeFactory, _minter, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod);
     }
 
     function initialize(
@@ -93,13 +98,14 @@ contract Strategy is BaseStrategy {
         address _balancerVault,
         address _balancerPool,
         address _gaugeFactory,
+        address _minter,
         uint256 _maxSlippageIn,
         uint256 _maxSlippageOut,
         uint256 _maxSingleDeposit,
         uint256 _minDepositPeriod
     ) external {
         _initialize(_vault, _strategist, _rewards, _keeper);
-        _initializeStrat(_vault, _balancerVault, _balancerPool, _gaugeFactory, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod);
+        _initializeStrat(_vault, _balancerVault, _balancerPool, _gaugeFactory, _minter, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod);
     }
 
     function _initializeStrat(
@@ -107,6 +113,7 @@ contract Strategy is BaseStrategy {
         address _balancerVault,
         address _balancerPool,
         address _gaugeFactory,
+        address _minter,
         uint256 _maxSlippageIn,
         uint256 _maxSlippageOut,
         uint256 _maxSingleDeposit,
@@ -138,9 +145,11 @@ contract Strategy is BaseStrategy {
         require(_gaugeFactory != address(0));
         gaugeFactory = ILiquidityGaugeFactory(_gaugeFactory);
         gauge = IStakingLiquidityGauge(gaugeFactory.getPoolGauge(address(bpt)));
+        minter = IBalancerMinter(_minter);
 
         require(address(gauge) != address(0));
         require(address(gauge.lp_token()) == address(bpt));
+        minter.setMinterApproval(address(minter), true);
         want.safeApprove(address(balancerVault), max);
         IERC20(bpt).safeApprove(address(gauge), max);
 
@@ -275,13 +284,8 @@ contract Strategy is BaseStrategy {
 
     function _sellRewards() internal {
         for (uint8 i = 0; i < rewardTokens.length; i++) {
-            ERC20 rewardToken = ERC20(address(rewardTokens[i]));
-            uint256 amount = rewardToken.balanceOf(address(this));
-
-            uint decReward = rewardToken.decimals();
-            uint decWant = ERC20(address(want)).decimals();
-
-            if (amount > 10 ** (decReward > decWant ? decReward.sub(decWant) : 0)) {
+            uint256 amount = balanceOfReward(i);
+            if (amount > 0) {
                 uint length = swapSteps[i].poolIds.length;
                 IBalancerVault.BatchSwapStep[] memory steps = new IBalancerVault.BatchSwapStep[](length);
                 int[] memory limits = new int[](length + 1);
@@ -306,11 +310,18 @@ contract Strategy is BaseStrategy {
 
     // this assumes that BAL is always index 0. If not, we can delist then whitelist again to make it at 0
     function _claimRewards() internal {
-        uint256 balBefore = balanceOfReward(0);
-        gauge.claim_rewards(address(this));
-        uint256 keepAmount = balanceOfReward(0).sub(balBefore).mul(keepBips).div(basisOne);
-        if (keepAmount > 0) {
-            rewardTokens[0].safeTransfer(keep, keepAmount);
+        for (uint i = 0; i < rewardTokens.length; i++) {
+            IERC20 token = rewardTokens[i];
+            if (token == BAL) {
+                uint256 balanceBefore = balanceOfReward(i);
+                minter.mint(address(gauge));
+                uint256 keepAmount = balanceOfReward(i).sub(balanceBefore).mul(keepBips).div(basisOne);
+                if (keepAmount > 0) {
+                    token.safeTransfer(keep, keepAmount);
+                }
+            } else {
+                gauge.claim_rewards(address(this));
+            }
         }
     }
 
