@@ -2,6 +2,7 @@ import pytest, requests
 from brownie import config, chain
 from brownie import Contract
 
+
 @pytest.fixture(autouse=True)
 def isolation(fn_isolation):
     pass
@@ -81,6 +82,7 @@ def amount(accounts, token, user, token_whale):
     token.transfer(user, amount, {"from": token_whale})
     yield amount
 
+
 @pytest.fixture
 def token2_whale(accounts):
     # In order to get some funds for the token you are about to use,
@@ -90,10 +92,12 @@ def token2_whale(accounts):
     reserve = accounts.at("0x5d3a536E4D6DbD6114cc1Ead35777bAB948E3643", force=True)
     return reserve
 
+
 @pytest.fixture
 def usdc_whale(accounts):
     reserve = accounts.at("0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503", force=True)
     yield reserve
+
 
 @pytest.fixture
 def amount2(accounts, token2, user, token2_whale):
@@ -178,7 +182,13 @@ def balancer_vault():
 def pool():
     # 0x06Df3b2bbB68adc8B0e302443692037ED9f91b42 stable pool
     # 0x32296969Ef14EB0c6d29669C550D4a0449130230 metastable eth pool
-    address = "0x06Df3b2bbB68adc8B0e302443692037ED9f91b42" # staBAL3
+    address = "0x06Df3b2bbB68adc8B0e302443692037ED9f91b42"  # staBAL3
+    yield Contract(address)
+
+
+@pytest.fixture
+def gauge_factory():
+    address = "0x4E7bBd911cf1EFa442BC1b2e9Ea01ffE785412EC"
     yield Contract(address)
 
 
@@ -192,10 +202,12 @@ def wethTokenPoolId():
     id = 0x96646936b91d6b9d7d0c47c496afbf3d6ec7b6f8000200000000000000000019  # weth-usdc
     yield id
 
+
 @pytest.fixture
 def wethToken2PoolId():
     id = 0x0b09dea16768f0799065c475be02919503cb2a3500020000000000000000001a  # weth-dai
     yield id
+
 
 @pytest.fixture
 def ldoWethPoolId():
@@ -207,13 +219,16 @@ def ldoWethPoolId():
 def swapStepsBal(balWethPoolId, wethTokenPoolId, bal, weth, token):
     yield ([balWethPoolId, wethTokenPoolId], [bal, weth, token])
 
+
 @pytest.fixture
 def swapStepsLdo(ldoWethPoolId, wethTokenPoolId, ldo, weth, token):
     yield ([ldoWethPoolId, wethTokenPoolId], [ldo, weth, token])
 
+
 @pytest.fixture
 def swapStepsBal2(balWethPoolId, wethToken2PoolId, bal, weth, token2):
     yield ([balWethPoolId, wethToken2PoolId], [bal, weth, token2])
+
 
 @pytest.fixture
 def swapStepsLdo2(ldoWethPoolId, wethToken2PoolId, ldo, weth, token2):
@@ -221,9 +236,17 @@ def swapStepsLdo2(ldoWethPoolId, wethToken2PoolId, ldo, weth, token2):
 
 
 @pytest.fixture
-def strategy(strategist, keeper, vault, Strategy, gov, balancer_vault, pool, bal, ldo, management, swapStepsBal,
+def strategyFactory(strategist, keeper, vault, StrategyFactory, balancer_vault, gov, pool, gauge_factory):
+    factory = strategist.deploy(StrategyFactory, vault, balancer_vault, pool, gauge_factory, 5, 5, 1_000_000,
+                                2 * 60 * 60)
+    yield factory
+
+
+@pytest.fixture
+def strategy(strategist, keeper, vault, Strategy, strategyFactory, gov, balancer_vault, gauge_factory, pool, bal, ldo,
+             management, swapStepsBal,
              swapStepsLdo):
-    strategy = strategist.deploy(Strategy, vault, balancer_vault, pool, 5, 5, 1_000_000, 2 * 60 * 60)
+    strategy = Strategy.at(strategyFactory.original(), owner=gov)
     strategy.setKeeper(keeper, {'from': gov})
     strategy.whitelistRewards(bal, swapStepsBal, {'from': gov})
     strategy.whitelistRewards(ldo, swapStepsLdo, {'from': gov})

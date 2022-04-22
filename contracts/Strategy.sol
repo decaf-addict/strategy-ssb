@@ -11,6 +11,8 @@ import {SafeERC20, SafeMath, IERC20, Address} from "@openzeppelin/contracts/toke
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Math} from "@openzeppelin/contracts/math/Math.sol";
 import "../interfaces/BalancerV2.sol";
+import "../interfaces/IStakingLiquidityGauge.sol";
+import "../interfaces/ILiquidityGaugeFactory.sol";
 
 interface IName {
     function name() external view returns (string memory);
@@ -20,15 +22,34 @@ contract Strategy is BaseStrategy {
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
 
+    modifier isVaultManager {
+        checkVaultManagers();
+        _;
+    }
+
+    function checkVaultManagers() internal {
+        require(msg.sender == vault.governance() || msg.sender == vault.management());
+    }
+
     IBalancerVault public balancerVault;
     IBalancerPool public bpt;
+    ILiquidityGaugeFactory public gaugeFactory;
+    IStakingLiquidityGauge public gauge;
     IERC20[] public rewardTokens;
     IAsset[] internal assets;
     SwapSteps[] internal swapSteps;
     bytes32 public balancerPoolId;
     uint8 public numTokens;
     uint8 public tokenIndex;
-    bool public doSellRewards = true;
+    Toggles public toggles;
+    address public keep;
+    uint256 public keepBips;
+
+    struct Toggles {
+        bool doSellRewards;
+        bool doClaimRewards;
+        bool doCollectTradingFees;
+    }
 
     struct SwapSteps {
         bytes32[] poolIds;
@@ -50,18 +71,18 @@ contract Strategy is BaseStrategy {
     uint256 public minDepositPeriod; // seconds
     uint256 public lastDepositTime;
     uint256 internal constant basisOne = 10000;
-    bool internal isOriginal = true;
 
     constructor(
         address _vault,
         address _balancerVault,
         address _balancerPool,
+        address _gaugeFactory,
         uint256 _maxSlippageIn,
         uint256 _maxSlippageOut,
         uint256 _maxSingleDeposit,
         uint256 _minDepositPeriod)
     public BaseStrategy(_vault){
-        _initializeStrat(_vault, _balancerVault, _balancerPool, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod);
+        _initializeStrat(_vault, _balancerVault, _balancerPool, _gaugeFactory, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod);
     }
 
     function initialize(
@@ -71,19 +92,21 @@ contract Strategy is BaseStrategy {
         address _keeper,
         address _balancerVault,
         address _balancerPool,
+        address _gaugeFactory,
         uint256 _maxSlippageIn,
         uint256 _maxSlippageOut,
         uint256 _maxSingleDeposit,
         uint256 _minDepositPeriod
     ) external {
         _initialize(_vault, _strategist, _rewards, _keeper);
-        _initializeStrat(_vault, _balancerVault, _balancerPool, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod);
+        _initializeStrat(_vault, _balancerVault, _balancerPool, _gaugeFactory, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod);
     }
 
     function _initializeStrat(
         address _vault,
         address _balancerVault,
         address _balancerPool,
+        address _gaugeFactory,
         uint256 _maxSlippageIn,
         uint256 _maxSlippageOut,
         uint256 _maxSingleDeposit,
@@ -91,7 +114,6 @@ contract Strategy is BaseStrategy {
     internal {
         // health.ychad.eth
         healthCheck = address(0xDDCea799fF1699e98EDF118e0629A974Df7DF012);
-        doSellRewards = true;
         bpt = IBalancerPool(_balancerPool);
         balancerPoolId = bpt.getPoolId();
         balancerVault = IBalancerVault(_balancerVault);
@@ -113,48 +135,25 @@ contract Strategy is BaseStrategy {
         maxSingleDeposit = _maxSingleDeposit.mul(10 ** uint256(ERC20(address(want)).decimals()));
         minDepositPeriod = _minDepositPeriod;
 
+        require(_gaugeFactory != address(0));
+        gaugeFactory = ILiquidityGaugeFactory(_gaugeFactory);
+        gauge = IStakingLiquidityGauge(gaugeFactory.getPoolGauge(address(bpt)));
+
+        require(address(gauge) != address(0));
+        require(address(gauge.lp_token()) == address(bpt));
         want.safeApprove(address(balancerVault), max);
+        IERC20(bpt).safeApprove(address(gauge), max);
+
+        toggles = Toggles({doSellRewards : true, doClaimRewards : true, doCollectTradingFees : true});
+
+        keepBips = 1000;
+        keep = governance();
     }
-
-    event Cloned(address indexed clone);
-
-    function clone(
-        address _vault,
-        address _strategist,
-        address _rewards,
-        address _keeper,
-        address _balancerVault,
-        address _balancerPool,
-        uint256 _maxSlippageIn,
-        uint256 _maxSlippageOut,
-        uint256 _maxSingleDeposit,
-        uint256 _minDepositPeriod
-    ) external returns (address payable newStrategy) {
-        require(isOriginal);
-
-        bytes20 addressBytes = bytes20(address(this));
-
-        assembly {
-        // EIP-1167 bytecode
-            let clone_code := mload(0x40)
-            mstore(clone_code, 0x3d602d80600a3d3981f3363d3d373d3d3d363d73000000000000000000000000)
-            mstore(add(clone_code, 0x14), addressBytes)
-            mstore(add(clone_code, 0x28), 0x5af43d82803e903d91602b57fd5bf30000000000000000000000000000000000)
-            newStrategy := create(0, clone_code, 0x37)
-        }
-
-        Strategy(newStrategy).initialize(
-            _vault, _strategist, _rewards, _keeper, _balancerVault, _balancerPool, _maxSlippageIn, _maxSlippageOut, _maxSingleDeposit, _minDepositPeriod
-        );
-
-        emit Cloned(newStrategy);
-    }
-
 
     // ******** OVERRIDE THESE METHODS FROM BASE CONTRACT ************
 
     function name() external view override returns (string memory) {
-        return string(abi.encodePacked("SSBv2 ", ERC20(address(want)).symbol(), " ", bpt.symbol()));
+        return string(abi.encodePacked("SSBv3 ", ERC20(address(want)).symbol(), " ", bpt.symbol()));
     }
 
     function estimatedTotalAssets() public view override returns (uint256) {
@@ -169,9 +168,14 @@ contract Strategy is BaseStrategy {
         uint256 beforeWant = balanceOfWant();
 
         // 2 forms of profit. Incentivized rewards (BAL+other) and pool fees (want)
-        collectTradingFees();
+        if (toggles.doCollectTradingFees) {
+            _collectTradingFees();
+        }
         // this would allow finer control over harvesting to get credits in without selling
-        if (doSellRewards) {
+        if (toggles.doClaimRewards) {
+            _claimRewards();
+        }
+        if (toggles.doSellRewards) {
             _sellRewards();
         }
 
@@ -205,6 +209,11 @@ contract Strategy is BaseStrategy {
             balancerVault.joinPool(balancerPoolId, address(this), address(this), request);
             lastDepositTime = now;
         }
+
+        uint256 _unstakedBpt = balanceOfUnstakedBpt();
+        if (_unstakedBpt > 0) {
+            _stakeBpt(_unstakedBpt);
+        }
     }
 
     // withdraws will realize losses if the pool is in bad conditions. This will heavily rely on _enforceSlippage to revert
@@ -212,9 +221,14 @@ contract Strategy is BaseStrategy {
     function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _liquidatedAmount, uint256 _loss){
         uint256 looseAmount = balanceOfWant();
         if (_amountNeeded > looseAmount) {
-            uint256 toExitAmount = _amountNeeded.sub(looseAmount);
+            uint256 toExitAmount = tokensToBpts(_amountNeeded.sub(looseAmount));
 
-            _sellBpt(tokensToBpts(toExitAmount));
+            uint256 _unstakedBpt = balanceOfUnstakedBpt();
+
+            if (toExitAmount > _unstakedBpt) {
+                _unstakeBpt(toExitAmount.sub(_unstakedBpt));
+            }
+            _sellBpt(toExitAmount);
 
             _liquidatedAmount = Math.min(balanceOfWant(), _amountNeeded);
             _loss = _amountNeeded.sub(_liquidatedAmount);
@@ -225,13 +239,15 @@ contract Strategy is BaseStrategy {
     }
 
     function liquidateAllPositions() internal override returns (uint256 liquidated) {
-        _sellBpt(balanceOfBpt());
+        _unstakeBpt(balanceOfStakedBpt());
+        _sellBpt(balanceOfUnstakedBpt());
         liquidated = balanceOfWant();
         return liquidated;
     }
 
     function prepareMigration(address _newStrategy) internal override {
-        bpt.transfer(_newStrategy, balanceOfBpt());
+        _unstakeBpt(balanceOfStakedBpt());
+        bpt.transfer(_newStrategy, balanceOfUnstakedBpt());
         for (uint i = 0; i < rewardTokens.length; i++) {
             IERC20 token = rewardTokens[i];
             uint256 balance = token.balanceOf(address(this));
@@ -246,12 +262,15 @@ contract Strategy is BaseStrategy {
     function ethToWant(uint256 _amtInWei) public view override returns (uint256){}
 
     function tendTrigger(uint256 callCostInWei) public view override returns (bool) {
-        return now.sub(lastDepositTime) > minDepositPeriod && balanceOfWant() > 0;
+        return now.sub(lastDepositTime) > minDepositPeriod && (balanceOfWant() > 0 || balanceOfUnstakedBpt() > 0);
     }
 
     // HELPERS //
-    function sellRewards() external onlyVaultManagers {
-        _sellRewards();
+    function claimAndSellRewards(bool _doSellRewards) external isVaultManager {
+        _claimRewards();
+        if (_doSellRewards) {
+            _sellRewards();
+        }
     }
 
     function _sellRewards() internal {
@@ -285,12 +304,31 @@ contract Strategy is BaseStrategy {
         }
     }
 
-    function collectTradingFees() internal {
+    // this assumes that BAL is always index 0. If not, we can delist then whitelist again to make it at 0
+    function _claimRewards() internal {
+        uint256 balBefore = balanceOfReward(0);
+        gauge.claim_rewards(address(this));
+        uint256 keepAmount = balanceOfReward(0).sub(balBefore).mul(keepBips).div(basisOne);
+        if (keepAmount > 0) {
+            rewardTokens[0].safeTransfer(keep, keepAmount);
+        }
+    }
+
+    function collectTradingFees() external isVaultManager {
+        _collectTradingFees();
+    }
+
+    function _collectTradingFees() internal {
         uint256 total = estimatedTotalAssets();
         uint256 debt = vault.strategies(address(this)).totalDebt;
         if (total > debt) {
-            uint256 profit = total.sub(debt);
-            _sellBpt(tokensToBpts(profit));
+            uint256 profit = tokensToBpts(total.sub(debt));
+            uint256 _unstakedBpt = balanceOfUnstakedBpt();
+            if (profit > _unstakedBpt) {
+                _unstakeBpt(profit.sub(_unstakedBpt));
+                _sellBpt(balanceOfUnstakedBpt());
+            }
+            _sellBpt(Math.min(profit, balanceOfUnstakedBpt()));
         }
     }
 
@@ -298,8 +336,12 @@ contract Strategy is BaseStrategy {
         return want.balanceOf(address(this));
     }
 
-    function balanceOfBpt() public view returns (uint256 _amount){
+    function balanceOfUnstakedBpt() public view returns (uint256 _amount){
         return bpt.balanceOf(address(this));
+    }
+
+    function balanceOfStakedBpt() public view returns (uint256 _amount){
+        return gauge.balanceOf(address(this));
     }
 
     function balanceOfReward(uint256 index) public view returns (uint256 _amount){
@@ -308,7 +350,7 @@ contract Strategy is BaseStrategy {
 
     // returns an estimate of want tokens based on bpt balance
     function balanceOfPooled() public view returns (uint256 _amount){
-        return bptsToTokens(balanceOfBpt());
+        return bptsToTokens(balanceOfStakedBpt().add(balanceOfUnstakedBpt()));
     }
 
     /// use bpt rate to estimate equivalent amount of want.
@@ -342,13 +384,13 @@ contract Strategy is BaseStrategy {
         );
     }
 
-    function sellBpt(uint256 _amountBpts) external onlyVaultManagers {
+    function sellBpt(uint256 _amountBpts) external isVaultManager {
         _sellBpt(_amountBpts);
     }
 
     // sell bpt for want at current bpt rate
     function _sellBpt(uint256 _amountBpts) internal {
-        _amountBpts = Math.min(_amountBpts, balanceOfBpt());
+        _amountBpts = Math.min(_amountBpts, balanceOfUnstakedBpt());
         if (_amountBpts > 0) {
             uint256[] memory minAmountsOut = new uint256[](numTokens);
             minAmountsOut[tokenIndex] = bptsToTokens(_amountBpts).mul(basisOne.sub(maxSlippageOut)).div(basisOne);
@@ -359,14 +401,14 @@ contract Strategy is BaseStrategy {
     }
 
     // for partnership rewards like Lido or airdrops
-    function whitelistRewards(address _rewardToken, SwapSteps memory _steps) public onlyVaultManagers {
+    function whitelistRewards(address _rewardToken, SwapSteps memory _steps) public isVaultManager {
         IERC20 token = IERC20(_rewardToken);
         token.approve(address(balancerVault), max);
         rewardTokens.push(token);
         swapSteps.push(_steps);
     }
 
-    function delistAllRewards() public onlyVaultManagers {
+    function delistAllRewards() public isVaultManager {
         for (uint i = 0; i < rewardTokens.length; i++) {
             rewardTokens[i].approve(address(balancerVault), 0);
         }
@@ -379,7 +421,7 @@ contract Strategy is BaseStrategy {
         return rewardTokens.length;
     }
 
-    function setParams(uint256 _maxSlippageIn, uint256 _maxSlippageOut, uint256 _maxSingleDeposit, uint256 _minDepositPeriod) public onlyVaultManagers {
+    function setParams(uint256 _maxSlippageIn, uint256 _maxSlippageOut, uint256 _maxSingleDeposit, uint256 _minDepositPeriod) public isVaultManager {
         require(_maxSlippageIn <= basisOne, "maxSlippageIn too high");
         maxSlippageIn = _maxSlippageIn;
 
@@ -390,18 +432,42 @@ contract Strategy is BaseStrategy {
         minDepositPeriod = _minDepositPeriod;
     }
 
-    function setDoSellRewards(bool _doSellRewards) external onlyVaultManagers {
-        doSellRewards = _doSellRewards;
+    function setToggles(bool _doSellRewards, bool _doClaimRewards, bool _doCollectTradingFees) external isVaultManager {
+        toggles.doSellRewards = _doSellRewards;
+        toggles.doClaimRewards = _doClaimRewards;
+        toggles.doCollectTradingFees = _doCollectTradingFees;
     }
 
     function getSwapSteps() public view returns (SwapSteps[] memory){
         return swapSteps;
     }
 
+    function stakeBpt(uint256 _amount) external isVaultManager {
+        _stakeBpt(_amount);
+    }
+
+    function _stakeBpt(uint256 _amount) internal {
+        gauge.deposit(Math.min(balanceOfUnstakedBpt(), _amount), address(this));
+    }
+
+    function unstakeBpt(uint256 _amount) external isVaultManager {
+        _unstakeBpt(_amount);
+    }
+
+    function _unstakeBpt(uint256 _amount) internal {
+        gauge.withdraw(Math.min(balanceOfStakedBpt(), _amount));
+    }
+
+    function setKeepParams(address _keep, uint256 _keepBips) external onlyGovernance {
+        require(keepBips <= basisOne);
+        keep = _keep;
+        keepBips = _keepBips;
+    }
+
     // Balancer requires this contract to be payable, so we add ability to sweep stuck ETH
     function sweepETH() public onlyGovernance {
-        (bool success, ) = governance().call{value: address(this).balance}("");
-        require(success,"!FailedETHSweep");
+        (bool success,) = governance().call{value : address(this).balance}("");
+        require(success, "!FailedETHSweep");
     }
 
     receive() external payable {}
