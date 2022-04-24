@@ -4,7 +4,6 @@ import pytest
 import util
 
 
-
 def test_operation(
         chain, accounts, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX
 ):
@@ -66,7 +65,7 @@ def test_profitable_harvest(
     chain.sleep(1)
     strategy.harvest({"from": strategist})
 
-    chain.sleep(3600 * 6)  # 6 hrs needed for profits to unlock
+    chain.sleep(3600 * 24)  # 6 hrs needed for profits to unlock
     chain.mine(1)
     profit = token.balanceOf(vault.address)  # Profits go to vault
 
@@ -184,14 +183,16 @@ def test_sweep(gov, vault, strategy, token, user, amount, weth, weth_amout):
     strategy.sweep(weth, {"from": gov})
     assert weth.balanceOf(gov) == weth_amout + before_balance
 
+
 def test_eth_sweep(chain, token, vault, strategy, user, strategist, gov):
-    strategist.transfer(strategy,1e18)
+    strategist.transfer(strategy, 1e18)
     with brownie.reverts():
         strategy.sweepETH({"from": strategist})
 
     eth_balance = gov.balance()
     strategy.sweepETH({"from": gov})
     assert gov.balance() > eth_balance
+
 
 def test_triggers(
         chain, gov, vault, strategy, token, amount, user, weth, weth_amout, strategist, bal, bal_whale, ldo, ldo_whale,
@@ -218,46 +219,47 @@ def test_rewards(
     strategy.delistAllRewards({'from': gov})
     assert strategy.numRewards() == 0
 
+
 def test_unbalance_deposit(chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, bal,
-                                  bal_whale, token2_whale, token2, usdc_whale,
-                                  ldo, gov, pool, balancer_vault):
+                           bal_whale, token2_whale, token2, usdc_whale,
+                           ldo, gov, pool, balancer_vault):
     # added in setup
     assert strategy.numRewards() == 2
 
-    token.approve(vault.address, 2**256-1, {"from": user})
+    token.approve(vault.address, 2 ** 256 - 1, {"from": user})
     vault.deposit(amount, {"from": user})
     assert token.balanceOf(vault.address) == amount
-
 
     print(f'pool rate before whale swap: {pool.getRate()}')
     pooled = balancer_vault.getPoolTokens(pool.getPoolId())[1][strategy.tokenIndex()]
     token.approve(balancer_vault, 2 ** 256 - 1, {'from': usdc_whale})
     chain.snapshot()
     singleSwap = (
-        pool.getPoolId(), # PoolID
-        0,              # Kind --- #0 = GIVEN_IN, 1 = GIVEN_OUT
-        token,          # asset in
-        token2,         # asset out
-        pooled / 1.5,   # amount -- here we increase usdc side of the pool dramatically
-        b'0x0'          # user data
+        pool.getPoolId(),  # PoolID
+        0,  # Kind --- #0 = GIVEN_IN, 1 = GIVEN_OUT
+        token,  # asset in
+        token2,  # asset out
+        pooled / 1.5,  # amount -- here we increase usdc side of the pool dramatically
+        b'0x0'  # user data
     )
     chain.snapshot()
     balancer_vault.swap(
-            singleSwap,             # swap struct
-            (                       # fund struct
-                usdc_whale,     # sender
-                False,          # fromInternalBalance
-                usdc_whale,     # recipient
-                False           # toInternalBalance
-            ),
-            token.balanceOf(usdc_whale),   # token limit
-            2**256-1,                   # Deadline
-            {'from': usdc_whale}
+        singleSwap,  # swap struct
+        (  # fund struct
+            usdc_whale,  # sender
+            False,  # fromInternalBalance
+            usdc_whale,  # recipient
+            False  # toInternalBalance
+        ),
+        token.balanceOf(usdc_whale),  # token limit
+        2 ** 256 - 1,  # Deadline
+        {'from': usdc_whale}
     )
     print(f'pool rate after whale swap: {pool.getRate()}')
 
     with brownie.reverts("BAL#208"):
-        tx = strategy.harvest({"from": strategist}) # Error Code BAL#208 BPT_OUT_MIN_AMOUNT - Slippage/front-running protection check failed on a pool join
+        tx = strategy.harvest({
+            "from": strategist})  # Error Code BAL#208 BPT_OUT_MIN_AMOUNT - Slippage/front-running protection check failed on a pool join
 
 
 def test_unbalanced_pool_withdraw(chain, token, vault, strategy, user, strategist, amount, RELATIVE_APPROX, bal,
@@ -326,3 +328,23 @@ def test_unbalanced_pool_withdraw(chain, token, vault, strategy, user, strategis
 
     # make sure principal is still as expected, aka loss wasn't socialized
     assert strategy.estimatedTotalAssets() >= amount / 2 * (10000 - old_slippage) / 10000
+
+
+def test_ldo_claim(accounts, ldo, chain):
+    bpt = Contract("0x32296969Ef14EB0c6d29669C550D4a0449130230")
+
+    # holder of bpt that hasn't been deposited into gauge
+    whale = accounts.at("0x3C0AeA3576B0D70e581FF613248A74D56cDe0853", force=True)
+    gauge = Contract("0xcD4722B7c24C29e0413BDCd9e51404B4539D14aE")
+
+    bpt.approve(gauge, 2 ** 256 - 1, {'from': whale})
+
+    ldo_before = ldo.balanceOf(whale)
+    gauge.deposit(bpt.balanceOf(whale), {'from': whale})
+
+    chain.sleep(3600 * 24 * 7)
+    chain.mine(1)
+
+    gauge.claim_rewards(whale, {'from': whale})
+
+    assert ldo.balanceOf(whale) > ldo_before
