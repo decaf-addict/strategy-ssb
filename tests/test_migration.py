@@ -33,40 +33,46 @@ def test_migration(
     vault.migrateStrategy(strategy, new_strategy, {"from": gov})
     assert (pytest.approx(new_strategy.estimatedTotalAssets(), rel=RELATIVE_APPROX) == amount)
 
-# def test_real_migration(
-#         chain,
-#         token,
-#         vault,
-#         strategy,
-#         amount,
-#         strategist,
-#         gov,
-#         user,
-#         RELATIVE_APPROX,
-#         balancer_vault, bal_whale,
-#         pool, ldo, ldo_whale, management, bal, gauge_factory
-# ):
-#     old = Contract("0x7A32aA9a16A59CB335ffdEe3dC94024b7F8A9a47")
-#     vault = Contract(old.vault())
-#     gov = accounts.at(vault.governance(), force=True)
-#     fromGov = {'from': gov}
-#
-#     util.stateOfOldStrat("old strategy before migration", old, token)
-#
-#     fixed_strategy = strategy
-#     vault.migrateStrategy(old, fixed_strategy, fromGov)
-#     util.stateOfOldStrat("old strategy after migration", old, token)
-#     util.stateOfStrat("new strategy after migration", fixed_strategy, token)
-#
-#     total_debt = vault.strategies(fixed_strategy)["totalDebt"]
-#     assert fixed_strategy.estimatedTotalAssets() >= total_debt
-#
-#     # exit everything out and see how much we get
-#     fixed_strategy.setEmergencyExit(fromGov)
-#     fixed_strategy.harvest(fromGov)
-#
-#     util.stateOfStrat("debt ratio 0", fixed_strategy, token)
-#
-#     # hopefully the gains from trading fees cancels out slippage
-#     print(f'net loss from exit: {vault.strategies(fixed_strategy)["totalLoss"]}')
-#     assert fixed_strategy.estimatedTotalAssets() == 0
+
+def test_real_migration(
+        chain,
+        token,
+        vault,
+        swapStepsBal,
+        strategy,
+        amount,
+        strategist,
+        gov,
+        user,
+        RELATIVE_APPROX,
+        balancer_vault, bal_whale,
+        pool, ldo, ldo_whale, management, bal, gauge_factory
+):
+    old = Contract("0x3B7c81daa0F7C897b3e09352E1Ca2fBE93Ac234D")
+    vault = Contract(old.vault())
+    gov = accounts.at(vault.governance(), force=True)
+    fromGov = {'from': gov}
+
+    util.stateOfOldStrat("old strategy before migration", old, token)
+
+    new_strat = Contract("0x034d775615d50D870D742caA1e539fC8d97955c2")
+    new_strat.whitelistRewards(bal, swapStepsBal, {'from': gov})
+    vault.migrateStrategy(old, new_strat, fromGov)
+    new_strat.stakeBpt(new_strat.balanceOfUnstakedBpt(), {'from': gov})
+    util.stateOfOldStrat("old strategy after migration", old, token)
+    util.stateOfStrat("new strategy after migration", new_strat, token)
+
+    total_debt = vault.strategies(new_strat)["totalDebt"]
+    assert new_strat.estimatedTotalAssets() >= total_debt
+
+    chain.sleep(3600 * 24 * 7)
+    chain.mine(1)
+
+    bal_before = new_strat.balanceOfReward(0)
+    new_strat.claimAndSellRewards(False, {'from': gov})
+    assert new_strat.balanceOfReward(0) > bal_before
+
+    util.stateOfStrat("new strategy after claim", new_strat, token)
+
+    tx = new_strat.harvest({'from': gov})
+    print(tx.events["StrategyReported"])
